@@ -85,11 +85,13 @@ router.post("/signup", async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(String(password), 12);
-    const projects = Array.isArray(project_list)
-      ? project_list.map((value) => String(value))
-      : project
-        ? [String(project).trim()]
-        : [];
+    const projects = Array.isArray(project)
+      ? project.map((value) => String(value))
+      : Array.isArray(project_list)
+        ? project_list.map((value) => String(value))
+        : project
+          ? [String(project).trim()]
+          : [];
 
     const insert = await pool.query(
       `INSERT INTO auth_users (name, email, phone_number, password_hash, role, project_list)
@@ -189,6 +191,64 @@ router.post("/forgot-password", async (req, res) => {
   } catch (error) {
     console.error("Forgot password error:", error);
     return res.status(500).json({ error: "failed to update password" });
+  }
+});
+
+router.get("/users", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT user_id, name, email, phone_number, role, project_list FROM auth_users ORDER BY name ASC"
+    );
+    return res.json(result.rows);
+  } catch (error) {
+    console.error("Get users error:", error);
+    return res.status(500).json({ error: "failed to fetch users" });
+  }
+});
+
+router.put("/users/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { username, email, phone_number, role, project, project_list } = req.body;
+
+    if (!username || !email || !role) {
+      return res.status(400).json({ error: "username, email and role are required" });
+    }
+
+    const projects = Array.isArray(project) ? project : (Array.isArray(project_list) ? project_list : []);
+
+    const result = await pool.query(
+      `UPDATE auth_users 
+       SET name = $1, email = $2, phone_number = $3, role = $4, project_list = $5 
+       WHERE user_id = $6 
+       RETURNING user_id, name, email, phone_number, role, project_list`,
+      [username, email, phone_number, role, projects, id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "user not found" });
+    }
+
+    return res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Update user error:", error);
+    return res.status(500).json({ error: "failed to update user" });
+  }
+});
+
+router.delete("/users/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query("DELETE FROM auth_users WHERE user_id = $1", [id]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "user not found" });
+    }
+
+    return res.json({ message: "user deleted successfully" });
+  } catch (error) {
+    console.error("Delete user error:", error);
+    return res.status(500).json({ error: "failed to delete user" });
   }
 });
 
