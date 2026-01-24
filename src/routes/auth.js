@@ -101,10 +101,9 @@ router.post("/signup", async (req, res) => {
     const user = sanitizeUser(insert.rows[0]);
     const token = buildToken(user);
 
-    return res.status(201).json({ token, user, message: "signup successful" });
+    return res.status(201).json({ token, user });
   } catch (error) {
     console.error("Signup error:", error);
-    try { require('fs').writeFileSync("error.log", `Signup error: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}\n`); } catch (e) { console.error(e); }
     return res.status(500).json({ error: "failed to sign up" });
   }
 });
