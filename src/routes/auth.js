@@ -3,9 +3,106 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { pool } = require("../db");
 
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     User:
+ *       type: object
+ *       required:
+ *         - username
+ *         - email
+ *         - role
+ *       properties:
+ *         user_id:
+ *           type: integer
+ *           description: The auto-generated id of the user
+ *         name:
+ *           type: string
+ *           description: The name of the user
+ *         email:
+ *           type: string
+ *           description: The email of the user
+ *         phone_number:
+ *           type: string
+ *           description: The phone number of the user
+ *         role:
+ *           type: string
+ *           description: The role of the user
+ *         project_list:
+ *           type: array
+ *           items:
+ *             type: string
+ *           description: List of projects assigned to the user
+ *     AuthResponse:
+ *       type: object
+ *       properties:
+ *         token:
+ *           type: string
+ *           description: JWT token
+ *         user:
+ *           $ref: '#/components/schemas/User'
+ */
+
 const router = express.Router();
 const ALLOWED_ROLES = new Set(["admin", "operational_manager", "po_officer", "labour"]);
 
+/**
+ * @swagger
+ * tags:
+ *   name: Auth
+ *   description: Authentication and User Management API
+ */
+
+/**
+ * @swagger
+ * /api/auth/signup:
+ *   post:
+ *     summary: Register a new user
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - username
+ *               - email
+ *               - password
+ *               - role
+ *             properties:
+ *               username:
+ *                 type: string
+ *               name:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *               phone_number:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *                 enum: [admin, operational_manager, po_officer, labour]
+ *               project:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       201:
+ *         description: User created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
+ *       400:
+ *         description: Bad request (missing fields or invalid role)
+ *       409:
+ *         description: Email or phone number already exists
+ *       500:
+ *         description: Server error
+ */
 function normalizeEmail(email) {
   return String(email).trim().toLowerCase();
 }
@@ -110,6 +207,40 @@ router.post("/signup", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/auth/login:
+ *   post:
+ *     summary: Log in a user
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
+ *       400:
+ *         description: Missing email or password
+ *       401:
+ *         description: Invalid credentials
+ *       500:
+ *         description: Server error
+ */
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -152,10 +283,53 @@ router.post("/login", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/auth/logout:
+ *   post:
+ *     summary: Log out a user
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: Logged out successfully
+ */
 router.post("/logout", (req, res) => {
   return res.json({ message: "logged out successfully" });
 });
 
+/**
+ * @swagger
+ * /api/auth/forgot-password:
+ *   post:
+ *     summary: Reset password
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email_id
+ *               - password_change
+ *               - re_typepassword
+ *             properties:
+ *               email_id:
+ *                 type: string
+ *               password_change:
+ *                 type: string
+ *               re_typepassword:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Password updated successfully
+ *       400:
+ *         description: Passwords do not match or missing fields
+ *       401:
+ *         description: Email not found
+ *       500:
+ *         description: Server error
+ */
 router.post("/forgot-password", async (req, res) => {
   try {
     const { email_id, password_change, re_typepassword } = req.body;
@@ -194,6 +368,24 @@ router.post("/forgot-password", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/auth/users:
+ *   get:
+ *     summary: Get all users
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: List of users
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/User'
+ *       500:
+ *         description: Server error
+ */
 router.get("/users", async (req, res) => {
   try {
     const result = await pool.query(
@@ -206,6 +398,52 @@ router.get("/users", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/auth/users/{id}:
+ *   put:
+ *     summary: Update a user
+ *     tags: [Auth]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: User ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               username:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *               phone_number:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *               project:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: User updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/User'
+ *       400:
+ *         description: Missing required fields
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Server error
+ */
 router.put("/users/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -236,6 +474,27 @@ router.put("/users/:id", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/auth/users/{id}:
+ *   delete:
+ *     summary: Delete a user
+ *     tags: [Auth]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: User ID
+ *     responses:
+ *       200:
+ *         description: User deleted successfully
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Server error
+ */
 router.delete("/users/:id", async (req, res) => {
   try {
     const { id } = req.params;
