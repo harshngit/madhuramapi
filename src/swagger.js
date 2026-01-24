@@ -29,7 +29,7 @@ const options = {
 			// },
 		},
 	},
-	apis: ["./src/routes/auth.js"], // it will read swagger comments from route files
+	apis: ["./src/routes/*.js"], // it will read swagger comments from route files
 };
 
 module.exports = swaggerJsdoc(options);

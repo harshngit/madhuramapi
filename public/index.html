@@ -244,29 +244,59 @@
     <!-- Dashboard Section -->
     <div id="dashboardSection" class="container hidden">
         <div class="dashboard-header">
-            <h1 style="margin: 0;">User Management</h1>
+            <h1 style="margin: 0;">Dashboard</h1>
             <div>
                 <span id="userWelcome" style="margin-right: 15px; color: #666;"></span>
-                <button class="btn btn-success" onclick="showCreateUser()">+ Create User</button>
+                <button class="btn btn-secondary" onclick="toggleView('users')">Users</button>
+                <button class="btn btn-secondary" onclick="toggleView('projects')">Projects</button>
                 <button class="btn btn-danger" onclick="logout()">Logout</button>
             </div>
         </div>
         
-        <div id="dashboardError" class="error-message"></div>
-        <div id="loading">Loading users...</div>
-        <table id="usersTable" style="display: none;">
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Phone</th>
-                    <th>Role</th>
-                    <th>Projects</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody id="usersList"></tbody>
-        </table>
+        <!-- User Management View -->
+        <div id="userView">
+            <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                <h2>User Management</h2>
+                <button class="btn btn-success" onclick="showCreateUser()">+ Create User</button>
+            </div>
+            <div id="dashboardError" class="error-message"></div>
+            <div id="loading">Loading users...</div>
+            <table id="usersTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Role</th>
+                        <th>Projects</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="usersList"></tbody>
+            </table>
+        </div>
+
+        <!-- Project Management View -->
+        <div id="projectView" class="hidden">
+            <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                <h2>Project Management</h2>
+                <button class="btn btn-success" onclick="showCreateProject()">+ Create Project</button>
+            </div>
+            <div id="projectError" class="error-message"></div>
+            <div id="loadingProjects">Loading projects...</div>
+            <table id="projectsTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Project Name</th>
+                        <th>Duration</th>
+                        <th>Client</th>
+                        <th>Work Order Info</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="projectsList"></tbody>
+            </table>
+        </div>
     </div>
 
     <!-- Create/Edit User Modal -->
@@ -320,10 +350,104 @@
         </div>
     </div>
 
+    <!-- Create/Edit Project Modal -->
+    <div id="projectModal" class="modal">
+        <div class="modal-content" style="max-width: 700px; max-height: 76vh; overflow-y: auto;">
+            <h2 id="projectModalTitle">Create Project</h2>
+            <div id="projectModalError" class="error-message"></div>
+            <form id="projectForm" enctype="multipart/form-data">
+                <input type="hidden" id="projectId">
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div class="form-group">
+                        <label for="projectName">Project Name</label>
+                        <input type="text" id="projectName" name="project_name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="productDuration">Product Duration</label>
+                        <input type="date" id="productDuration" name="product_duration">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="clientName">Client Name</label>
+                    <input type="text" id="clientName" name="client_name">
+                </div>
+
+                <div class="form-group">
+                    <label for="workOrderInfo">Work Order Information</label>
+                    <textarea id="workOrderInfo" name="work_order_information" rows="3" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;"></textarea>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div class="form-group">
+                        <label for="workOrderFile">Work Order File (Max 5MB)</label>
+                        <input type="file" id="workOrderFile" name="work_order_file" onchange="validateFileSize(this)">
+                        <small id="currentWorkOrderFile" style="display: block; margin-top: 5px; color: #666;"></small>
+                    </div>
+                    <div class="form-group">
+                        <label for="masFile">MAS File (Max 5MB)</label>
+                        <input type="file" id="masFile" name="mas_file" onchange="validateFileSize(this)">
+                        <small id="currentMasFile" style="display: block; margin-top: 5px; color: #666;"></small>
+                    </div>
+                </div>
+
+                <!-- PR & PO Tracking Tags -->
+                <div class="form-group">
+                    <label>PR & PO Tracking</label>
+                    <div class="project-input-container">
+                        <input type="text" id="prPoInput" placeholder="Type and press Enter">
+                        <button type="button" class="btn btn-secondary" onclick="addTag('prPo')">Add</button>
+                    </div>
+                    <div id="prPoList" class="project-tags"></div>
+                </div>
+
+                <!-- Samples Tags -->
+                <div class="form-group">
+                    <label>Samples</label>
+                    <div class="project-input-container">
+                        <input type="text" id="sampleInput" placeholder="Type and press Enter">
+                        <button type="button" class="btn btn-secondary" onclick="addTag('sample')">Add</button>
+                    </div>
+                    <div id="sampleList" class="project-tags"></div>
+                </div>
+
+                <!-- ML Management Tags -->
+                <div class="form-group">
+                    <label>ML Management</label>
+                    <div class="project-input-container">
+                        <input type="text" id="mlInput" placeholder="Type and press Enter">
+                        <button type="button" class="btn btn-secondary" onclick="addTag('ml')">Add</button>
+                    </div>
+                    <div id="mlList" class="project-tags"></div>
+                </div>
+
+                <div style="text-align: right; margin-top: 20px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeProjectModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         const API_BASE = '/api/auth';
+        const API_PROJECTS = '/api/projects';
         let currentUser = null;
-        let projectTags = [];
+        let projectTags = []; // For User form
+        
+        // For Project form
+        let prPoTags = [];
+        let sampleTags = [];
+        let mlTags = [];
+
+        function validateFileSize(input) {
+            const file = input.files[0];
+            if (file && file.size > 5 * 1024 * 1024) { // 5MB limit
+                alert('File size must be less than 5MB');
+                input.value = ''; // Clear the input
+            }
+        }
 
         // --- Auth Logic ---
 
@@ -431,6 +555,21 @@
 
         // --- Dashboard Logic ---
 
+        function toggleView(view) {
+            const userView = document.getElementById('userView');
+            const projectView = document.getElementById('projectView');
+            
+            if (view === 'users') {
+                userView.classList.remove('hidden');
+                projectView.classList.add('hidden');
+                fetchUsers();
+            } else {
+                userView.classList.add('hidden');
+                projectView.classList.remove('hidden');
+                fetchProjects();
+            }
+        }
+
         async function fetchUsers() {
             try {
                 const response = await fetch(`${API_BASE}/users`);
@@ -464,6 +603,59 @@
                 `;
                 tbody.appendChild(tr);
             });
+        }
+
+        async function fetchProjects() {
+            try {
+                document.getElementById('loadingProjects').style.display = 'block';
+                const response = await fetch(API_PROJECTS);
+                if (!response.ok) throw new Error('Failed to fetch projects');
+                const projects = await response.json();
+                renderProjectsTable(projects);
+                document.getElementById('loadingProjects').style.display = 'none';
+                document.getElementById('projectsTable').style.display = 'table';
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('loadingProjects').textContent = 'Error loading projects.';
+            }
+        }
+
+        function renderProjectsTable(projects) {
+            const tbody = document.getElementById('projectsList');
+            tbody.innerHTML = '';
+            
+            projects.forEach(project => {
+                const tr = document.createElement('tr');
+                // Format duration if needed
+                const duration = project.product_duration ? new Date(project.product_duration).toLocaleDateString() : '-';
+                
+                tr.innerHTML = `
+                    <td>${project.project_name}</td>
+                    <td>${duration}</td>
+                    <td>${project.client_name || '-'}</td>
+                    <td>${project.work_order_information || '-'}</td>
+                    <td>
+                        <button class="btn btn-primary" onclick="editProject('${project.project_id}', '${encodeURIComponent(JSON.stringify(project))}')">Edit</button>
+                        <button class="btn btn-danger" onclick="deleteProject('${project.project_id}')">Delete</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function deleteUser(id) {
+            if (!confirm('Are you sure you want to delete this user?')) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/users/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                if (!response.ok) throw new Error('Failed to delete user');
+                fetchUsers();
+            } catch (error) {
+                alert(error.message);
+            }
         }
 
         // --- Modal Logic (Create/Edit) ---
@@ -591,11 +783,158 @@
             }
         };
 
+        // --- Project Modal Logic ---
+
+        function showCreateProject() {
+            document.getElementById('projectModalTitle').textContent = 'Create Project';
+            document.getElementById('projectId').value = '';
+            document.getElementById('projectForm').reset();
+            document.getElementById('currentWorkOrderFile').textContent = '';
+            document.getElementById('currentMasFile').textContent = '';
+            document.getElementById('projectModalError').style.display = 'none';
+            
+            prPoTags = [];
+            sampleTags = [];
+            mlTags = [];
+            renderProjectTags('prPo');
+            renderProjectTags('sample');
+            renderProjectTags('ml');
+            
+            document.getElementById('projectModal').style.display = 'block';
+        }
+
+        function editProject(id, projectStr) {
+            const project = JSON.parse(decodeURIComponent(projectStr));
+            document.getElementById('projectModalTitle').textContent = 'Edit Project';
+            document.getElementById('projectId').value = project.project_id;
+            document.getElementById('projectName').value = project.project_name;
+            document.getElementById('productDuration').value = project.product_duration ? project.product_duration.split('T')[0] : '';
+            document.getElementById('clientName').value = project.client_name || '';
+            document.getElementById('workOrderInfo').value = project.work_order_information || '';
+            
+            document.getElementById('currentWorkOrderFile').textContent = project.work_order_file ? `Current: ${project.work_order_file}` : '';
+            document.getElementById('currentMasFile').textContent = project.mas_file ? `Current: ${project.mas_file}` : '';
+            
+            prPoTags = project.pr_po_tracking || [];
+            sampleTags = project.samples || [];
+            mlTags = project.ml_management || [];
+            
+            renderProjectTags('prPo');
+            renderProjectTags('sample');
+            renderProjectTags('ml');
+            
+            document.getElementById('projectModalError').style.display = 'none';
+            document.getElementById('projectModal').style.display = 'block';
+        }
+
+        function closeProjectModal() {
+            document.getElementById('projectModal').style.display = 'none';
+        }
+
+        function addTag(type) {
+            const inputId = type === 'prPo' ? 'prPoInput' : (type === 'sample' ? 'sampleInput' : 'mlInput');
+            const input = document.getElementById(inputId);
+            const value = input.value.trim();
+            const tags = type === 'prPo' ? prPoTags : (type === 'sample' ? sampleTags : mlTags);
+            
+            if (value && !tags.includes(value)) {
+                tags.push(value);
+                renderProjectTags(type);
+                input.value = '';
+            }
+        }
+
+        function removeTag(type, index) {
+            const tags = type === 'prPo' ? prPoTags : (type === 'sample' ? sampleTags : mlTags);
+            tags.splice(index, 1);
+            renderProjectTags(type);
+        }
+
+        function renderProjectTags(type) {
+            const containerId = type === 'prPo' ? 'prPoList' : (type === 'sample' ? 'sampleList' : 'mlList');
+            const tags = type === 'prPo' ? prPoTags : (type === 'sample' ? sampleTags : mlTags);
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            
+            tags.forEach((tag, index) => {
+                const div = document.createElement('div');
+                div.className = 'project-tag';
+                div.innerHTML = `
+                    ${tag}
+                    <span onclick="removeTag('${type}', ${index})">&times;</span>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        // Enter key handlers for tags
+        document.getElementById('prPoInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); addTag('prPo'); }
+        });
+        document.getElementById('sampleInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); addTag('sample'); }
+        });
+        document.getElementById('mlInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); addTag('ml'); }
+        });
+
+        document.getElementById('projectForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('projectId').value;
+            const isEdit = !!id;
+            const form = e.target;
+            const formData = new FormData(form);
+            
+            // Append arrays/objects
+            formData.append('pr_po_tracking', JSON.stringify(prPoTags));
+            formData.append('samples', JSON.stringify(sampleTags));
+            formData.append('ml_management', JSON.stringify(mlTags));
+
+            const endpoint = isEdit ? `${API_PROJECTS}/${id}` : API_PROJECTS;
+            const method = isEdit ? 'PUT' : 'POST';
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: method,
+                    body: formData // Fetch handles Content-Type for FormData automatically
+                });
+
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Operation failed');
+
+                closeProjectModal();
+                fetchProjects();
+            } catch (error) {
+                const errorDiv = document.getElementById('projectModalError');
+                errorDiv.textContent = error.message;
+                errorDiv.style.display = 'block';
+            }
+        };
+
+        async function deleteProject(id) {
+            if (!confirm('Are you sure you want to delete this project?')) return;
+            
+            try {
+                const response = await fetch(`${API_PROJECTS}/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                if (!response.ok) throw new Error('Failed to delete project');
+                fetchProjects();
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
         // Close modal when clicking outside
         window.onclick = function(event) {
-            const modal = document.getElementById('userModal');
-            if (event.target == modal) {
+            const userModal = document.getElementById('userModal');
+            const projectModal = document.getElementById('projectModal');
+            if (event.target == userModal) {
                 closeModal();
+            }
+            if (event.target == projectModal) {
+                closeProjectModal();
             }
         }
 
