@@ -401,6 +401,50 @@ router.get("/users", async (req, res) => {
 /**
  * @swagger
  * /api/auth/users/{id}:
+ *   get:
+ *     summary: Get a user by ID
+ *     tags: [Auth]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: User ID
+ *     responses:
+ *       200:
+ *         description: User details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/User'
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Server error
+ */
+router.get("/users/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      "SELECT user_id, name, email, phone_number, role, project_list FROM auth_users WHERE user_id = $1",
+      [id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "user not found" });
+    }
+
+    return res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Get user by id error:", error);
+    return res.status(500).json({ error: "failed to fetch user" });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/users/{id}:
  *   put:
  *     summary: Update a user
  *     tags: [Auth]
