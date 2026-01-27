@@ -59,14 +59,20 @@ const uploadMiddleware = (req, res, next) => {
  *           type: integer
  *         project_name:
  *           type: string
- *         product_duration:
+ *         project_startdate:
  *           type: string
  *           format: date
  *         client_name:
  *           type: string
- *         work_order_file:
+ *         location:
  *           type: string
- *         work_order_information:
+ *         floor:
+ *           type: string
+ *         estimate_value:
+ *           type: string
+ *         wo_number:
+ *           type: string
+ *         work_order_file:
  *           type: string
  *         pr_po_tracking:
  *           type: array
@@ -82,6 +88,9 @@ const uploadMiddleware = (req, res, next) => {
  *           type: array
  *           items:
  *             type: string
+ *         user_id:
+ *           type: string
+ *           format: uuid
  *         created_at:
  *           type: string
  *           format: date-time
@@ -110,16 +119,22 @@ const uploadMiddleware = (req, res, next) => {
  *             properties:
  *               project_name:
  *                 type: string
- *               product_duration:
+ *               project_startdate:
  *                 type: string
  *                 format: date
  *               client_name:
  *                 type: string
+ *               location:
+ *                 type: string
+ *               floor:
+ *                 type: string
+ *               estimate_value:
+ *                 type: string
+ *               wo_number:
+ *                 type: string
  *               work_order_file:
  *                 type: string
  *                 format: binary
- *               work_order_information:
- *                 type: string
  *               pr_po_tracking:
  *                 type: array
  *                 items:
@@ -135,6 +150,9 @@ const uploadMiddleware = (req, res, next) => {
  *                 type: array
  *                 items:
  *                   type: string
+ *               user_id:
+ *                 type: string
+ *                 format: uuid
  *     responses:
  *       201:
  *         description: Project created successfully
@@ -149,12 +167,16 @@ router.post("/", uploadMiddleware, async (req, res) => {
   try {
     const {
       project_name,
-      product_duration,
+      project_startdate,
       client_name,
-      work_order_information,
+      location,
+      floor,
+      estimate_value,
+      wo_number,
       pr_po_tracking,
       samples,
       ml_management,
+      user_id,
     } = req.body;
 
     // Get the file names for uploaded files
@@ -180,19 +202,23 @@ router.post("/", uploadMiddleware, async (req, res) => {
     // Insert into the database
     const result = await pool.query(
       `INSERT INTO projects (
-        project_name, product_duration, client_name, work_order_file, 
-        work_order_information, pr_po_tracking, samples, mas_file, ml_management
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+        project_name, project_startdate, client_name, location, floor, estimate_value, wo_number,
+        work_order_file, pr_po_tracking, samples, mas_file, ml_management, user_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
       [
         project_name,
-        product_duration,
+        project_startdate,
         client_name,
+        location,
+        floor,
+        estimate_value,
+        wo_number,
         work_order_file,
-        work_order_information,
         prPoTracking || [],
         samplesArr || [],
         mas_file,
         mlManagementArr || [],
+        user_id || null, // Allow null if not provided
       ]
     );
 
@@ -292,16 +318,22 @@ router.get("/:id", async (req, res) => {
  *             properties:
  *               project_name:
  *                 type: string
- *               product_duration:
+ *               project_startdate:
  *                 type: string
  *                 format: date
  *               client_name:
  *                 type: string
+ *               location:
+ *                 type: string
+ *               floor:
+ *                 type: string
+ *               estimate_value:
+ *                 type: string
+ *               wo_number:
+ *                 type: string
  *               work_order_file:
  *                 type: string
  *                 format: binary
- *               work_order_information:
- *                 type: string
  *               pr_po_tracking:
  *                 type: array
  *                 items:
@@ -334,9 +366,12 @@ router.put("/:id", uploadMiddleware, async (req, res) => {
     const { id } = req.params;
     const {
       project_name,
-      product_duration,
+      project_startdate,
       client_name,
-      work_order_information,
+      location,
+      floor,
+      estimate_value,
+      wo_number,
       pr_po_tracking,
       samples,
       ml_management,
@@ -363,22 +398,28 @@ router.put("/:id", uploadMiddleware, async (req, res) => {
     const result = await pool.query(
       `UPDATE projects SET
         project_name = $1,
-        product_duration = $2,
+        project_startdate = $2,
         client_name = $3,
-        work_order_information = $4,
-        pr_po_tracking = $5,
-        samples = $6,
-        ml_management = $7,
-        work_order_file = COALESCE($8, work_order_file),
-        mas_file = COALESCE($9, mas_file),
+        location = $4,
+        floor = $5,
+        estimate_value = $6,
+        wo_number = $7,
+        pr_po_tracking = $8,
+        samples = $9,
+        ml_management = $10,
+        work_order_file = COALESCE($11, work_order_file),
+        mas_file = COALESCE($12, mas_file),
         updated_at = CURRENT_TIMESTAMP
-      WHERE project_id = $10
+      WHERE project_id = $13
       RETURNING *`,
       [
         project_name,
-        product_duration,
+        project_startdate,
         client_name,
-        work_order_information,
+        location,
+        floor,
+        estimate_value,
+        wo_number,
         prPoTracking,
         samplesArr,
         mlManagementArr,
