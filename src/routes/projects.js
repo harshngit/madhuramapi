@@ -477,4 +477,45 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/projects/user/{userId}:
+ *   get:
+ *     summary: Get all projects for a specific user
+ *     tags: [Projects]
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         required: true
+ *         description: User ID (UUID)
+ *     responses:
+ *       200:
+ *         description: List of projects for the user
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Project'
+ *       500:
+ *         description: Server error
+ */
+router.get("/user/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const result = await pool.query(
+      "SELECT * FROM projects WHERE user_id = $1 ORDER BY created_at DESC",
+      [userId]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Get user projects error:", error);
+    res.status(500).json({ error: "Failed to fetch user projects" });
+  }
+});
+
 module.exports = router;
