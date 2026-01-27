@@ -38,7 +38,7 @@ const uploadMiddleware = (req, res, next) => {
   uploadFields(req, res, (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === "LIMIT_FILE_SIZE") {
-        return res.status(400).json({ error: "File size too large. Max limit is 5MB." });
+        return res.status(400).json({ error: "File size too large. Max limit is 100MB." });
       }
       return res.status(400).json({ error: `Upload error: ${err.message}` });
     } else if (err) {
