@@ -7,6 +7,7 @@ const swaggerSpec = require("./swagger");
 
 const authRoutes = require("./routes/auth");
 const projectRoutes = require("./routes/projects");
+const compressionRoutes = require("./routes/compression");
 
 const app = express();
 
@@ -37,6 +38,7 @@ app.get("/health", (req, res) => {
 // API Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/projects", projectRoutes);
+app.use("/api/compress", compressionRoutes);
 
 // 404 Error for undefined routes
 app.use((req, res) => {
