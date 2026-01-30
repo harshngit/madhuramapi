@@ -12,7 +12,23 @@ CREATE TABLE IF NOT EXISTS projects (
     samples TEXT[],
     mas_file TEXT,
     ml_management TEXT[],
-    user_id UUID REFERENCES auth_users(user_id)
+    user_id UUID REFERENCES auth_users(user_id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS boqs (
+    boq_id SERIAL PRIMARY KEY,
+    category TEXT,
+    item_code TEXT,
+    description TEXT,
+    floor TEXT,
+    unit TEXT,
+    quantity NUMERIC,
+    rate NUMERIC,
+    amount NUMERIC,
+    boq_file TEXT,
+    project_id INTEGER REFERENCES projects(project_id) ON DELETE CASCADE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

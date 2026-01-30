@@ -298,6 +298,8 @@
                 <tbody id="projectsList"></tbody>
             </table>
         </div>
+        
+        <div id="ocrView" class="hidden"></div>
     </div>
 
     <!-- Create/Edit User Modal -->
@@ -581,15 +583,17 @@
                 userView.classList.remove('hidden');
                 projectView.classList.add('hidden');
                 fetchUsers();
-            } else {
+            } else if (view === 'projects') {
                 userView.classList.add('hidden');
                 projectView.classList.remove('hidden');
                 fetchProjects();
+            } else {
+                userView.classList.add('hidden');
+                projectView.classList.add('hidden');
             }
         }
 
         async function fetchUsers() {
-            try {
                 const response = await fetch(`${API_BASE}/users`);
                 if (!response.ok) throw new Error('Failed to fetch users');
                 const users = await response.json();
