@@ -32,3 +32,23 @@ CREATE TABLE IF NOT EXISTS boqs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS mirs (
+    mir_id SERIAL PRIMARY KEY,
+    project_name TEXT,
+    project_code TEXT,
+    client_name TEXT,
+    pmc TEXT,
+    contractor TEXT,
+    vendor_code TEXT,
+    mir_refrence_no TEXT,
+    material_code TEXT,
+    inspection_date_time TIMESTAMP,
+    client_submission_date DATE,
+    refrence_docs_attached TEXT,
+    mir_submited BOOLEAN DEFAULT FALSE,
+    dynamic_field JSONB DEFAULT '[]'::jsonb,
+    project_id INTEGER REFERENCES projects(project_id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
