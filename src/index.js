@@ -10,6 +10,7 @@ const projectRoutes = require("./routes/projects");
 const compressionRoutes = require("./routes/compression");
 const boqRoutes = require("./routes/boq");
 const mirRoutes = require("./routes/mir");
+const itrRoutes = require("./routes/itr");
 
 const app = express();
 
@@ -43,6 +44,7 @@ app.use("/api/projects", projectRoutes);
 app.use("/api/compress", compressionRoutes);
 app.use("/api/boq", boqRoutes);
 app.use("/api/mir", mirRoutes);
+app.use("/api/itr", itrRoutes);
 
 // 404 Error for undefined routes
 app.use((req, res) => {

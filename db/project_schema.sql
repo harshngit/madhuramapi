@@ -52,3 +52,22 @@ CREATE TABLE IF NOT EXISTS mirs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS itrs (
+    itr_id SERIAL PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(project_id) ON DELETE CASCADE,
+    header_details JSONB DEFAULT '{}'::jsonb,
+    contractor_details JSONB DEFAULT '{}'::jsonb,
+    mep_clearance JSONB DEFAULT '{}'::jsonb,
+    surveyor_clearance JSONB DEFAULT '{}'::jsonb,
+    interface_clearance JSONB DEFAULT '{}'::jsonb,
+    contract_manager JSONB DEFAULT '{}'::jsonb,
+    pmc_comments TEXT,
+    engineer_civil JSONB DEFAULT '{}'::jsonb,
+    engineer_mep JSONB DEFAULT '{}'::jsonb,
+    tower_incharge JSONB DEFAULT '{}'::jsonb,
+    qaa_department JSONB DEFAULT '{}'::jsonb,
+    result_code TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
