@@ -140,6 +140,126 @@ router.post("/upload", upload.array("file"), (req, res) => {
 
 /**
  * @swagger
+ * /api/sample/create-sample:
+ *   post:
+ *     summary: Create a new sample
+ *     tags: [Sample]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               project_id:
+ *                 type: integer
+ *               building_name:
+ *                 type: string
+ *               site_name:
+ *                 type: string
+ *               location:
+ *                 type: object
+ *                 properties:
+ *                   address_line1:
+ *                     type: string
+ *                   address_line2:
+ *                     type: string
+ *                   city:
+ *                     type: string
+ *                   state:
+ *                     type: string
+ *                   country:
+ *                     type: string
+ *               work_done:
+ *                 type: string
+ *               item_description:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     sr_no:
+ *                       type: integer
+ *                     description:
+ *                       type: string
+ *                     quantity:
+ *                       type: number
+ *                     value:
+ *                       type: number
+ *                     add_fields:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           key:
+ *                             type: string
+ *                           value:
+ *                             type: string
+ *               add_fields:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     key:
+ *                       type: string
+ *                     value:
+ *                       type: string
+ *     responses:
+ *       201:
+ *         description: Sample created successfully
+ *       400:
+ *         description: Invalid project_id
+ *       500:
+ *         description: Server error
+ */
+router.post("/create-sample", async (req, res) => {
+  try {
+    const {
+      project_id,
+      building_name,
+      site_name,
+      location,
+      work_done,
+      item_description,
+      add_fields,
+    } = req.body;
+
+    const query = `
+      INSERT INTO samples (
+        project_id,
+        building_name,
+        site_name,
+        location,
+        work_done,
+        item_description,
+        add_fields
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING *;
+    `;
+
+    const values = [
+      project_id,
+      building_name,
+      site_name,
+      location ? JSON.stringify(location) : null,
+      work_done,
+      item_description ? JSON.stringify(item_description) : JSON.stringify([]),
+      add_fields ? JSON.stringify(add_fields) : JSON.stringify([]),
+    ];
+
+    const result = await pool.query(query, values);
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error("Error creating sample:", error);
+    if (error.code === "23503") {
+      return res.status(400).json({ error: "Invalid project_id: Project does not exist" });
+    }
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+/**
+ * @swagger
  * /api/sample:
  *   get:
  *     summary: Get all samples
