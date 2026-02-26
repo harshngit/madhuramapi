@@ -107,3 +107,19 @@ CREATE TABLE IF NOT EXISTS pos (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS delivery_challans (
+    dc_id SERIAL PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(project_id) ON DELETE CASCADE,
+    po_id INTEGER REFERENCES pos(po_id) ON DELETE CASCADE,
+    po_number TEXT,
+    challan_number TEXT,
+    items JSONB DEFAULT '[]'::jsonb,
+    challan_date DATE,
+    work_order_number TEXT,
+    order_date DATE,
+    total_po_items INTEGER,
+    total_challan_items INTEGER,
+    status TEXT CHECK (status IN ('incomplete','completed')) DEFAULT 'incomplete',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

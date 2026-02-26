@@ -28,6 +28,10 @@ async function init() {
       console.log("Could not parse DATABASE_URL, using individual vars");
     }
   }
+  // If DATABASE_URL not provided, prefer PGDATABASE from env
+  if (!process.env.DATABASE_URL && process.env.PGDATABASE) {
+    targetDbName = process.env.PGDATABASE;
+  }
 
   console.log(`Target Database: ${targetDbName}`);
   console.log(`Connecting to postgres to check/create database...`);
