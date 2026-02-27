@@ -15,6 +15,8 @@ const poRoutes = require("./routes/po");
 const sampleRoutes = require("./routes/sample");
 const inventoryRoutes = require("./routes/inventory");
 const deliveryChallanRoutes = require("./routes/delivery_challan");
+// ✅ NEW: PDF Price List extraction route
+const priceListRoutes = require("./routes/price_list");
 
 const app = express();
 
@@ -53,6 +55,8 @@ app.use("/api/po", poRoutes);
 app.use("/api/sample", sampleRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/dc", deliveryChallanRoutes);
+// ✅ NEW: PDF Price List extraction routes
+app.use("/api/price-list", priceListRoutes);
 
 // 404 Error for undefined routes
 app.use((req, res) => {

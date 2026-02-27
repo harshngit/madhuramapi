@@ -249,6 +249,7 @@
                 <span id="userWelcome" style="margin-right: 15px; color: #666;"></span>
                 <button class="btn btn-secondary" onclick="toggleView('users')">Users</button>
                 <button class="btn btn-secondary" onclick="toggleView('projects')">Projects</button>
+                <button class="btn btn-secondary" onclick="toggleView('dcUpload')">DC Upload</button>
                 <button class="btn btn-danger" onclick="logout()">Logout</button>
             </div>
         </div>
@@ -300,6 +301,23 @@
         </div>
         
         <div id="ocrView" class="hidden"></div>
+        
+        <!-- Delivery Challan Upload -->
+        <div id="dcUploadView" class="hidden">
+            <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                <h2>Delivery Challan Upload</h2>
+            </div>
+            <div id="dcUploadError" class="error-message"></div>
+            <div id="dcUploadSuccess" class="success-message"></div>
+            <form id="dcUploadForm" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="dcFile">Select file</label>
+                    <input type="file" id="dcFile" name="file" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Upload</button>
+            </form>
+            <div id="dcUploadedPath" style="margin-top: 15px; color: #333;"></div>
+        </div>
     </div>
 
     <!-- Create/Edit User Modal -->
@@ -578,18 +596,20 @@
         function toggleView(view) {
             const userView = document.getElementById('userView');
             const projectView = document.getElementById('projectView');
+            const dcUploadView = document.getElementById('dcUploadView');
             
+            userView.classList.add('hidden');
+            projectView.classList.add('hidden');
+            dcUploadView.classList.add('hidden');
+
             if (view === 'users') {
                 userView.classList.remove('hidden');
-                projectView.classList.add('hidden');
                 fetchUsers();
             } else if (view === 'projects') {
-                userView.classList.add('hidden');
                 projectView.classList.remove('hidden');
                 fetchProjects();
-            } else {
-                userView.classList.add('hidden');
-                projectView.classList.add('hidden');
+            } else if (view === 'dcUpload') {
+                dcUploadView.classList.remove('hidden');
             }
         }
 
@@ -957,6 +977,43 @@
             }
         }
 
+        // Delivery Challan Upload
+        document.getElementById('dcUploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const errorEl = document.getElementById('dcUploadError');
+            const successEl = document.getElementById('dcUploadSuccess');
+            const uploadedPathEl = document.getElementById('dcUploadedPath');
+            errorEl.style.display = 'none';
+            successEl.style.display = 'none';
+            uploadedPathEl.textContent = '';
+
+            const fileInput = document.getElementById('dcFile');
+            if (!fileInput.files.length) {
+                errorEl.textContent = 'Please select a file.';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            try {
+                const resp = await fetch('/api/dc/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    throw new Error(data.error || 'Upload failed');
+                }
+                successEl.textContent = 'Upload successful';
+                successEl.style.display = 'block';
+                uploadedPathEl.textContent = `Path: ${data.filePath}`;
+            } catch (err) {
+                errorEl.textContent = err.message;
+                errorEl.style.display = 'block';
+            }
+        });
         // Close modal when clicking outside
         window.onclick = function(event) {
             const userModal = document.getElementById('userModal');

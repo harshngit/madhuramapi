@@ -1,6 +1,28 @@
 const express = require("express");
 const router = express.Router();
 const { pool } = require("../db");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+
+// Ensure upload directory exists
+const uploadDir = path.join(__dirname, "../../uploads/dc");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// Configure Multer
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  },
+});
+
+const upload = multer({ storage: storage });
 
 /**
  * @swagger
@@ -8,6 +30,43 @@ const { pool } = require("../db");
  *   name: DeliveryChallan
  *   description: Delivery Challan management
  */
+
+/**
+ * @swagger
+ * /api/dc/upload:
+ *   post:
+ *     summary: Upload a file for Delivery Challan
+ *     tags: [DeliveryChallan]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: File uploaded successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 filePath:
+ *                   type: string
+ *       400:
+ *         description: No file uploaded
+ */
+router.post("/upload", upload.single("file"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
+  }
+  const filePath = `/uploads/dc/${req.file.filename}`;
+  res.json({ filePath });
+});
 
 /**
  * @swagger
