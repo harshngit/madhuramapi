@@ -443,7 +443,7 @@ function parsePO(items) {
  *       Upload any Madhuram-format PO PDF.
  *       Returns a fully-structured JSON object matching all fields in POST /api/po.
  *       Does NOT save to the database — use /api/po-parser/parse-and-save for that.
- *     tags: [PO Parser]
+ *     tags: [PO]
  *     requestBody:
  *       required: true
  *       content:
