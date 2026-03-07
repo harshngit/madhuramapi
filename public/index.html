@@ -249,6 +249,7 @@
                 <span id="userWelcome" style="margin-right: 15px; color: #666;"></span>
                 <button class="btn btn-secondary" onclick="toggleView('users')">Users</button>
                 <button class="btn btn-secondary" onclick="toggleView('projects')">Projects</button>
+                <button class="btn btn-secondary" onclick="toggleView('poBySample')">POs by Sample</button>
                 <button class="btn btn-secondary" onclick="toggleView('dcUpload')">DC Upload</button>
                 <button class="btn btn-danger" onclick="logout()">Logout</button>
             </div>
@@ -317,6 +318,33 @@
                 <button type="submit" class="btn btn-primary">Upload</button>
             </form>
             <div id="dcUploadedPath" style="margin-top: 15px; color: #333;"></div>
+        </div>
+
+        <!-- POs by Sample View -->
+        <div id="poBySampleView" class="hidden">
+            <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                <h2>POs by Sample</h2>
+            </div>
+            <div class="form-group" style="max-width: 360px;">
+                <label for="sampleIdInput">Sample ID</label>
+                <input type="number" id="sampleIdInput" placeholder="Enter sample ID">
+            </div>
+            <button class="btn btn-primary" id="fetchPoBySampleBtn">Fetch POs</button>
+            <div id="poBySampleError" class="error-message"></div>
+            <div id="poBySampleLoading" style="margin-top: 10px; display:none;">Loading POs...</div>
+            <table id="poBySampleTable" style="display: none; margin-top: 15px;">
+                <thead>
+                    <tr>
+                        <th>PO ID</th>
+                        <th>Order No</th>
+                        <th>Vendor</th>
+                        <th>Total</th>
+                        <th>Status</th>
+                        <th>Created At</th>
+                    </tr>
+                </thead>
+                <tbody id="poBySampleList"></tbody>
+            </table>
         </div>
     </div>
 
@@ -597,10 +625,12 @@
             const userView = document.getElementById('userView');
             const projectView = document.getElementById('projectView');
             const dcUploadView = document.getElementById('dcUploadView');
+            const poBySampleView = document.getElementById('poBySampleView');
             
             userView.classList.add('hidden');
             projectView.classList.add('hidden');
             dcUploadView.classList.add('hidden');
+            poBySampleView.classList.add('hidden');
 
             if (view === 'users') {
                 userView.classList.remove('hidden');
@@ -610,6 +640,8 @@
                 fetchProjects();
             } else if (view === 'dcUpload') {
                 dcUploadView.classList.remove('hidden');
+            } else if (view === 'poBySample') {
+                poBySampleView.classList.remove('hidden');
             }
         }
 
@@ -1012,6 +1044,57 @@
             } catch (err) {
                 errorEl.textContent = err.message;
                 errorEl.style.display = 'block';
+            }
+        });
+        // Fetch POs by Sample
+        document.getElementById('fetchPoBySampleBtn').addEventListener('click', async () => {
+            const sampleId = document.getElementById('sampleIdInput').value.trim();
+            const errorEl = document.getElementById('poBySampleError');
+            const loadingEl = document.getElementById('poBySampleLoading');
+            const tableEl = document.getElementById('poBySampleTable');
+            const listEl = document.getElementById('poBySampleList');
+            errorEl.style.display = 'none';
+            tableEl.style.display = 'none';
+            listEl.innerHTML = '';
+
+            if (!sampleId) {
+                errorEl.textContent = 'Please enter a Sample ID';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            loadingEl.style.display = 'block';
+            try {
+                const resp = await fetch(`/api/po/sample/${sampleId}`);
+                const data = await resp.json();
+                if (!resp.ok) {
+                    throw new Error(data.error || 'Failed to fetch POs');
+                }
+                if (!Array.isArray(data) || data.length === 0) {
+                    errorEl.textContent = 'No POs found for this Sample ID';
+                    errorEl.style.display = 'block';
+                    loadingEl.style.display = 'none';
+                    return;
+                }
+                data.forEach(po => {
+                    const tr = document.createElement('tr');
+                    const createdAt = po.created_at ? new Date(po.created_at).toLocaleString() : '-';
+                    tr.innerHTML = `
+                        <td>${po.po_id}</td>
+                        <td>${po.order_no || '-'}</td>
+                        <td>${po.vendor_name || '-'}</td>
+                        <td>${po.total_amount ?? '-'}</td>
+                        <td>${po.status || '-'}</td>
+                        <td>${createdAt}</td>
+                    `;
+                    listEl.appendChild(tr);
+                });
+                tableEl.style.display = 'table';
+            } catch (err) {
+                errorEl.textContent = err.message;
+                errorEl.style.display = 'block';
+            } finally {
+                loadingEl.style.display = 'none';
             }
         });
         // Close modal when clicking outside

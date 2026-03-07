@@ -86,6 +86,8 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *             properties:
  *               project_id:
  *                 type: integer
+ *               sample_id:
+ *                 type: integer
  *               company_name:
  *                 type: string
  *               company_subtitle:
@@ -175,6 +177,7 @@ router.post("/upload", upload.single("file"), (req, res) => {
 router.post("/", async (req, res) => {
   const {
     project_id,
+    sample_id,
     company_name,
     company_subtitle,
     company_email,
@@ -209,15 +212,16 @@ router.post("/", async (req, res) => {
   try {
     const result = await pool.query(
       `INSERT INTO pos (
-        project_id, company_name, company_subtitle, company_email, company_gst,
+        project_id, sample_id, company_name, company_subtitle, company_email, company_gst,
         indent_no, indent_date, order_no, po_date, vendor_name, site,
         contact_person, vendor_address, primary_contact_name, primary_contact_number,
         secondary_contact_number, secondary_contact_name, items, discount,
         discount_amount, after_discount, cgst, cgst_amount, sgst, sgst_amount,
         total_amount, delivery, payment, notes, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30) RETURNING *`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31) RETURNING *`,
       [
         project_id,
+        sample_id || null,
         company_name,
         company_subtitle,
         company_email,
@@ -288,6 +292,36 @@ router.get("/project/:projectId", async (req, res) => {
 
 /**
  * @swagger
+ * /api/po/sample/{sampleId}:
+ *   get:
+ *     summary: Get all POs for a specific sample
+ *     tags: [PO]
+ *     parameters:
+ *       - in: path
+ *         name: sampleId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Sample ID
+ *     responses:
+ *       200:
+ *         description: List of POs for the sample
+ *       500:
+ *         description: Internal server error
+ */
+router.get("/sample/:sampleId", async (req, res) => {
+  const { sampleId } = req.params;
+  try {
+    const result = await pool.query("SELECT * FROM pos WHERE sample_id = $1 ORDER BY created_at DESC", [sampleId]);
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching POs by sample:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
  * /api/po/{id}:
  *   get:
  *     summary: Get a single PO by ID
@@ -351,6 +385,7 @@ router.get("/:id", async (req, res) => {
 router.put("/:id", async (req, res) => {
   const { id } = req.params;
   const {
+    sample_id,
     company_name,
     company_subtitle,
     company_email,
@@ -385,38 +420,40 @@ router.put("/:id", async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE pos SET
-        company_name = COALESCE($1, company_name),
-        company_subtitle = COALESCE($2, company_subtitle),
-        company_email = COALESCE($3, company_email),
-        company_gst = COALESCE($4, company_gst),
-        indent_no = COALESCE($5, indent_no),
-        indent_date = COALESCE($6, indent_date),
-        order_no = COALESCE($7, order_no),
-        po_date = COALESCE($8, po_date),
-        vendor_name = COALESCE($9, vendor_name),
-        site = COALESCE($10, site),
-        contact_person = COALESCE($11, contact_person),
-        vendor_address = COALESCE($12, vendor_address),
-        primary_contact_name = COALESCE($13, primary_contact_name),
-        primary_contact_number = COALESCE($14, primary_contact_number),
-        secondary_contact_number = COALESCE($15, secondary_contact_number),
-        secondary_contact_name = COALESCE($16, secondary_contact_name),
-        items = COALESCE($17, items),
-        discount = COALESCE($18, discount),
-        discount_amount = COALESCE($19, discount_amount),
-        after_discount = COALESCE($20, after_discount),
-        cgst = COALESCE($21, cgst),
-        cgst_amount = COALESCE($22, cgst_amount),
-        sgst = COALESCE($23, sgst),
-        sgst_amount = COALESCE($24, sgst_amount),
-        total_amount = COALESCE($25, total_amount),
-        delivery = COALESCE($26, delivery),
-        payment = COALESCE($27, payment),
-        notes = COALESCE($28, notes),
-        status = COALESCE($29, status),
+        sample_id = COALESCE($1, sample_id),
+        company_name = COALESCE($2, company_name),
+        company_subtitle = COALESCE($3, company_subtitle),
+        company_email = COALESCE($4, company_email),
+        company_gst = COALESCE($5, company_gst),
+        indent_no = COALESCE($6, indent_no),
+        indent_date = COALESCE($7, indent_date),
+        order_no = COALESCE($8, order_no),
+        po_date = COALESCE($9, po_date),
+        vendor_name = COALESCE($10, vendor_name),
+        site = COALESCE($11, site),
+        contact_person = COALESCE($12, contact_person),
+        vendor_address = COALESCE($13, vendor_address),
+        primary_contact_name = COALESCE($14, primary_contact_name),
+        primary_contact_number = COALESCE($15, primary_contact_number),
+        secondary_contact_number = COALESCE($16, secondary_contact_number),
+        secondary_contact_name = COALESCE($17, secondary_contact_name),
+        items = COALESCE($18, items),
+        discount = COALESCE($19, discount),
+        discount_amount = COALESCE($20, discount_amount),
+        after_discount = COALESCE($21, after_discount),
+        cgst = COALESCE($22, cgst),
+        cgst_amount = COALESCE($23, cgst_amount),
+        sgst = COALESCE($24, sgst),
+        sgst_amount = COALESCE($25, sgst_amount),
+        total_amount = COALESCE($26, total_amount),
+        delivery = COALESCE($27, delivery),
+        payment = COALESCE($28, payment),
+        notes = COALESCE($29, notes),
+        status = COALESCE($30, status),
         updated_at = CURRENT_TIMESTAMP
-      WHERE po_id = $30 RETURNING *`,
+      WHERE po_id = $31 RETURNING *`,
       [
+        sample_id,
         company_name,
         company_subtitle,
         company_email,

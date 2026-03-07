@@ -17,6 +17,19 @@ CREATE TABLE IF NOT EXISTS projects (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS vendors (
+    vendor_id SERIAL PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(project_id) ON DELETE CASCADE,
+    vendor_name TEXT NOT NULL,
+    vendor_company_name TEXT,
+    vendor_email TEXT,
+    mobile_number TEXT,
+    location TEXT,
+    status TEXT CHECK (status IN ('active', 'inactive', 'blocked')) DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS boqs (
     boq_id SERIAL PRIMARY KEY,
     category TEXT,
@@ -72,9 +85,24 @@ CREATE TABLE IF NOT EXISTS itrs (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS samples (
+    sample_id SERIAL PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(project_id) ON DELETE CASCADE,
+    building_name TEXT,
+    site_name TEXT,
+    location JSONB,
+    work_done TEXT,
+    item_description JSONB DEFAULT '[]'::jsonb,
+    add_fields JSONB DEFAULT '[]'::jsonb,
+    sample_file TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS pos (
     po_id SERIAL PRIMARY KEY,
     project_id INTEGER REFERENCES projects(project_id) ON DELETE CASCADE,
+    sample_id INTEGER REFERENCES samples(sample_id) ON DELETE SET NULL,
     company_name TEXT,
     company_subtitle TEXT,
     company_email TEXT,
