@@ -4,6 +4,8 @@ const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const { logActivity } = require("./dashboard"); // adjust path if needed
+
 
 // Ensure upload directory exists
 const uploadDir = path.join(__dirname, "../../uploads/itr");

@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { pool } = require("../db");
+const { logActivity } = require("./dashboard"); // adjust path if needed
 
 /**
  * @swagger
@@ -100,6 +101,15 @@ router.post("/", async (req, res) => {
       ]
     );
     res.status(201).json(result.rows[0]);
+    logActivity({
+  action: "created",
+  entity_type: "vendor",
+  entity_id: result.rows[0].vendor_id,
+  entity_name: result.rows[0].vendor_name,
+  performed_by: req.body.created_by || null,
+  performed_by_name: req.body.created_by_name || null,
+  meta: { project_id: result.rows[0].project_id },
+});
   } catch (error) {
     console.error("Error creating vendor:", error);
     res.status(500).json({ error: error.message });
@@ -362,6 +372,14 @@ router.delete("/:id", async (req, res) => {
       return res.status(404).json({ error: "Vendor not found" });
     }
     res.json({ message: "Vendor deleted successfully" });
+    logActivity({
+  action: "deleted",
+  entity_type: "vendor",
+  entity_id: id,
+  entity_name: result.rows[0].vendor_name,
+  performed_by: null,
+  performed_by_name: null,
+});
   } catch (error) {
     console.error("Error deleting vendor:", error);
     res.status(500).json({ error: error.message });

@@ -3,6 +3,8 @@ const router = express.Router();
 const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
+const { logActivity } = require("./dashboard"); // adjust path if needed
+
 const fs = require("fs");
 
 // Ensure upload directory exists

@@ -2,6 +2,8 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { pool } = require("../db");
+const { logActivity } = require("./dashboard"); // adjust path if needed
+
 
 /**
  * @swagger
@@ -201,7 +203,16 @@ router.post("/signup", async (req, res) => {
     const token = buildToken(user);
 
     return res.status(201).json({ token, user });
-  } catch (error) {
+    logActivity({
+  action: "created",
+  entity_type: "user",
+  entity_id: result.rows[0].user_id,
+  entity_name: result.rows[0].name,
+  performed_by: result.rows[0].user_id,
+  performed_by_name: result.rows[0].name,
+  meta: { email: result.rows[0].email, role: result.rows[0].role },
+});
+  } catch (error) { 
     console.error("Signup error:", error);
     return res.status(500).json({ error: "failed to sign up" });
   }

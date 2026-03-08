@@ -3,6 +3,8 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const { pool } = require("../db");
+const { logActivity } = require("./dashboard"); // adjust path if needed
+
 
 const router = express.Router();
 

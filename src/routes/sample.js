@@ -4,6 +4,8 @@ const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const { logActivity } = require("./dashboard"); // adjust path if needed
+
 
 const uploadDir = path.join(__dirname, "../../uploads/sample");
 if (!fs.existsSync(uploadDir)) {
@@ -249,6 +251,15 @@ router.post("/create-sample", async (req, res) => {
 
     const result = await pool.query(query, values);
     res.status(201).json(result.rows[0]);
+    logActivity({
+  action: "created",
+  entity_type: "sample",
+  entity_id: result.rows[0].sample_id,
+  entity_name: result.rows[0].sample_name || `Sample #${result.rows[0].sample_id}`,
+  performed_by: req.body.created_by || null,
+  performed_by_name: req.body.created_by_name || null,
+  meta: { project_id: result.rows[0].project_id },
+});
   } catch (error) {
     console.error("Error creating sample:", error);
     if (error.code === "23503") {
@@ -465,6 +476,14 @@ router.delete("/:id", async (req, res) => {
     }
 
     res.json({ message: "Sample deleted successfully" });
+    logActivity({
+  action: "deleted",
+  entity_type: "sample",
+  entity_id: id,
+  entity_name: `Sample #${id}`,
+  performed_by: null,
+  performed_by_name: null,
+});
   } catch (error) {
     console.error("Error deleting sample:", error);
     res.status(500).json({ error: "Internal Server Error" });

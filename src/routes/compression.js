@@ -5,6 +5,8 @@ const fs = require('fs');
 const sharp = require('sharp');
 const zlib = require('zlib');
 const { compressPdf } = require('../utils/pdfCompressor');
+const { logActivity } = require("./dashboard"); // adjust path if needed
+
 
 const router = express.Router();
 

@@ -3,6 +3,8 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const { pool } = require("../db");
+const { logActivity } = require("./dashboard"); // adjust path if needed
+
 
 const router = express.Router();
 
@@ -224,6 +226,15 @@ router.post("/", uploadMiddleware, async (req, res) => {
 
     // Send response back
     res.status(201).json(result.rows[0]);
+    logActivity({
+  action: "created",
+  entity_type: "project",
+  entity_id: result.rows[0].project_id,
+  entity_name: result.rows[0].project_name,
+  performed_by: result.rows[0].user_id || null,
+  performed_by_name: req.body.created_by_name || null,
+  meta: {},
+});
   } catch (error) {
     console.error("Create project error:", error);
     res.status(500).json({ error: "Failed to create project" });
@@ -471,8 +482,18 @@ router.delete("/:id", async (req, res) => {
     }
 
     res.json({ message: "Project deleted successfully" });
+    // After project DELETE:
+logActivity({
+  action: "deleted",
+  entity_type: "project",
+  entity_id: id,
+  entity_name: result.rows[0].project_name,
+  performed_by: null,
+  performed_by_name: null,
+});
   } catch (error) {
     console.error("Delete project error:", error);
+    
     res.status(500).json({ error: "Failed to delete project" });
   }
 });

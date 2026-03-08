@@ -1,6 +1,8 @@
 const express = require("express");
 require("dotenv").config();
 const cors = require("cors");
+const http = require("http");
+const { WebSocketServer } = require("ws");
 
 const swaggerUi = require("swagger-ui-express");
 const swaggerSpec = require("./swagger");
@@ -16,36 +18,29 @@ const poRoutes = require("./routes/po");
 const sampleRoutes = require("./routes/sample");
 const inventoryRoutes = require("./routes/inventory");
 const deliveryChallanRoutes = require("./routes/delivery_challan");
-// ✅ NEW: PDF Price List extraction route
 const priceListRoutes = require("./routes/price_list");
-
-const dynamicPLRoutes = require('./routes/dynamic_price_list');
 const vendorRoutes = require("./routes/vendor");
+const dynamicPLRoutes = require("./routes/dynamic_price_list");
+
+// ✅ NEW: Dashboard + Activity + WebSocket
+const { router: dashboardRouter, wsHandler } = require("./routes/dashboard");
 
 const app = express();
 
-// Enable JSON parsing for incoming requests
 app.use(express.json());
-// Serve static files like images, etc.
 app.use(express.static("public"));
-
-// Serve uploaded files via the URL path "/uploads"
 app.use("/uploads", express.static("uploads"));
-
-app.use('/api/dynamic-price-list', dynamicPLRoutes);
-
-// Enable CORS for frontend integration
 app.use(
   cors({
-    origin: "*", // for testing, later restrict to your frontend domain
+    origin: "*",
     credentials: true,
   })
 );
 
-// Swagger Documentation Setup
+// Swagger
 app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// Health check endpoint
+// Health check
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
@@ -62,18 +57,28 @@ app.use("/api/po", poRoutes);
 app.use("/api/sample", sampleRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/dc", deliveryChallanRoutes);
-// ✅ NEW: PDF Price List extraction routes
 app.use("/api/price-list", priceListRoutes);
 app.use("/api/vendors", vendorRoutes);
+app.use("/api/dynamic-price-list", dynamicPLRoutes);
 
-// 404 Error for undefined routes
+// ✅ NEW: Dashboard routes
+app.use("/api/dashboard", dashboardRouter);
+
+// 404
 app.use((req, res) => {
   res.status(404).json({ error: "not found" });
 });
 
-// Set the port from the environment or use default
-const port = process.env.PORT ? Number(process.env.PORT) : 3000;
+// ─── Create HTTP server (needed for WebSocket to share same port) ─────────────
+const server = http.createServer(app);
 
-app.listen(port, () => {
+// ─── WebSocket server on /ws/activity ────────────────────────────────────────
+const wss = new WebSocketServer({ server, path: "/ws/activity" });
+wss.on("connection", wsHandler);
+console.log("WebSocket server ready at ws://localhost:<port>/ws/activity");
+
+// ─── Start ────────────────────────────────────────────────────────────────────
+const port = process.env.PORT ? Number(process.env.PORT) : 3000;
+server.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });

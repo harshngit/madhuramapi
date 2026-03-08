@@ -4,6 +4,8 @@ const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const { logActivity } = require("./dashboard"); // adjust path if needed
+
 
 // Ensure upload directory exists
 const uploadDir = path.join(__dirname, "../../uploads/po");
@@ -254,6 +256,19 @@ router.post("/", async (req, res) => {
       ]
     );
     res.status(201).json(result.rows[0]);
+    logActivity({
+  action: "created",
+  entity_type: "po",
+  entity_id: result.rows[0].po_id,
+  entity_name: `PO #${result.rows[0].po_id}`,
+  performed_by: req.body.created_by || null,
+  performed_by_name: req.body.created_by_name || null,
+  meta: {
+    project_id: result.rows[0].project_id,
+    sample_id: result.rows[0].sample_id,
+    company_name: result.rows[0].company_name,
+  },
+});
   } catch (error) {
     console.error("Error creating PO:", error);
     res.status(500).json({ error: error.message });
@@ -526,6 +541,15 @@ router.delete("/:id", async (req, res) => {
       return res.status(404).json({ error: "PO not found" });
     }
     res.json({ message: "PO deleted successfully" });
+    logActivity({
+  action: "deleted",
+  entity_type: "po",
+  entity_id: id,
+  entity_name: `PO #${id}`,
+  performed_by: null,
+  performed_by_name: null,
+});
+
   } catch (error) {
     console.error("Error deleting PO:", error);
     res.status(500).json({ error: error.message });

@@ -28,6 +28,8 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const PDFParser = require("pdf2json");
+const { logActivity } = require("./dashboard"); // adjust path if needed
+
 
 // ─── Upload directory (temp – files deleted after parsing) ───────────────────
 const uploadDir = path.join(__dirname, "../../uploads/po_parser");
