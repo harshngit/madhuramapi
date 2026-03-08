@@ -18,6 +18,8 @@ const inventoryRoutes = require("./routes/inventory");
 const deliveryChallanRoutes = require("./routes/delivery_challan");
 // ✅ NEW: PDF Price List extraction route
 const priceListRoutes = require("./routes/price_list");
+
+const dynamicPLRoutes = require('./routes/dynamic_price_list');
 const vendorRoutes = require("./routes/vendor");
 
 const app = express();
@@ -29,6 +31,8 @@ app.use(express.static("public"));
 
 // Serve uploaded files via the URL path "/uploads"
 app.use("/uploads", express.static("uploads"));
+
+app.use('/api/dynamic-price-list', dynamicPLRoutes);
 
 // Enable CORS for frontend integration
 app.use(
