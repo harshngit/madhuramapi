@@ -167,6 +167,29 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *                       type: string
  *               project_id:
  *                 type: integer
+ *               po_id:
+ *                 type: integer
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     srno:
+ *                       type: integer
+ *                     hsn:
+ *                       type: string
+ *                     description:
+ *                       type: string
+ *                     qty:
+ *                       type: number
+ *                     UOM:
+ *                       type: string
+ *                     Rate:
+ *                       type: number
+ *                     Amount:
+ *                       type: number
+ *                     remark:
+ *                       type: string
  *     responses:
  *       201:
  *         description: MIR created successfully
@@ -192,15 +215,17 @@ router.post("/", async (req, res) => {
       mir_submited,
       dynamic_field,
       project_id,
+      po_id,
+      items
     } = req.body;
 
     const query = `
       INSERT INTO mirs (
         project_name, project_code, client_name, pmc, contractor, vendor_code,
         mir_refrence_no, material_code, inspection_date_time, client_submission_date,
-        refrence_docs_attached, mir_submited, dynamic_field, project_id
+        refrence_docs_attached, mir_submited, dynamic_field, project_id, po_id, items
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING *;
     `;
 
@@ -219,6 +244,8 @@ router.post("/", async (req, res) => {
       mir_submited,
       JSON.stringify(dynamic_field || []),
       project_id,
+      po_id || null,
+      JSON.stringify(items || [])
     ];
 
     const result = await pool.query(query, values);
