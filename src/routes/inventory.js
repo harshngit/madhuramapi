@@ -60,6 +60,8 @@ const { pool } = require("../db");
  *                 type: number
  *               stockin:
  *                 type: boolean
+ *               billing:
+ *                 type: boolean
  *     responses:
  *       201:
  *         description: Inventory item created successfully
@@ -70,7 +72,7 @@ const { pool } = require("../db");
  */
 router.post("/", async (req, res) => {
   try {
-    const { project_id, brand, quantity, name, price, stockin } = req.body;
+    const { project_id, brand, quantity, name, price, stockin, billing } = req.body;
 
     const query = `
       INSERT INTO inventories (
@@ -79,13 +81,14 @@ router.post("/", async (req, res) => {
         quantity,
         name,
         price,
-        stockin
+        stockin,
+        billing
       )
-      VALUES ($1, $2, $3, $4, $5, $6)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING *;
     `;
 
-    const values = [project_id, brand, quantity, name, price, stockin];
+    const values = [project_id, brand, quantity, name, price, stockin, billing];
 
     const result = await pool.query(query, values);
     res.status(201).json(result.rows[0]);
@@ -216,6 +219,8 @@ router.get("/project/:projectId", async (req, res) => {
  *                 type: number
  *               stockin:
  *                 type: boolean
+ *               billing:
+ *                 type: boolean
  *     responses:
  *       200:
  *         description: Inventory item updated successfully
@@ -225,7 +230,7 @@ router.get("/project/:projectId", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { brand, quantity, name, price, stockin } = req.body;
+    const { brand, quantity, name, price, stockin, billing } = req.body;
 
     const query = `
       UPDATE inventories SET
@@ -234,12 +239,13 @@ router.put("/:id", async (req, res) => {
         name = COALESCE($3, name),
         price = COALESCE($4, price),
         stockin = COALESCE($5, stockin),
+        billing = COALESCE($6, billing),
         updated_at = CURRENT_TIMESTAMP
-      WHERE inventory_id = $6
+      WHERE inventory_id = $7
       RETURNING *;
     `;
 
-    const values = [brand, quantity, name, price, stockin, id];
+    const values = [brand, quantity, name, price, stockin, billing, id];
 
     const result = await pool.query(query, values);
 
@@ -287,6 +293,112 @@ router.delete("/:id", async (req, res) => {
     res.json({ message: "Inventory item deleted successfully" });
   } catch (error) {
     console.error("Error deleting inventory item:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+/**
+ * @swagger
+ * /api/inventory/{id}/stockin:
+ *   patch:
+ *     summary: Update stockin status of an inventory item
+ *     tags: [Inventory]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [stockin]
+ *             properties:
+ *               stockin:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Stockin status updated successfully
+ *       404:
+ *         description: Inventory item not found
+ */
+router.patch("/:id/stockin", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { stockin } = req.body;
+
+    if (typeof stockin !== 'boolean') {
+      return res.status(400).json({ error: "stockin must be a boolean" });
+    }
+
+    const result = await pool.query(
+      "UPDATE inventories SET stockin = $1, updated_at = CURRENT_TIMESTAMP WHERE inventory_id = $2 RETURNING *",
+      [stockin, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Inventory item not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error updating stockin status:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+/**
+ * @swagger
+ * /api/inventory/{id}/billing:
+ *   patch:
+ *     summary: Update billing status of an inventory item
+ *     tags: [Inventory]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [billing]
+ *             properties:
+ *               billing:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Billing status updated successfully
+ *       404:
+ *         description: Inventory item not found
+ */
+router.patch("/:id/billing", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { billing } = req.body;
+
+    if (typeof billing !== 'boolean') {
+      return res.status(400).json({ error: "billing must be a boolean" });
+    }
+
+    const result = await pool.query(
+      "UPDATE inventories SET billing = $1, updated_at = CURRENT_TIMESTAMP WHERE inventory_id = $2 RETURNING *",
+      [billing, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Inventory item not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error updating billing status:", error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
