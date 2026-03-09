@@ -143,6 +143,18 @@ router.post("/", upload.single("boq_file"), async (req, res) => {
 
 		const result = await pool.query(query, values);
 		res.status(201).json(result.rows[0]);
+
+		// Log Activity
+		logActivity({
+			action: "created",
+			entity_type: "boq",
+			entity_id: result.rows[0].boq_id,
+			entity_name: description || item_code || `BOQ #${result.rows[0].boq_id}`,
+			performed_by: req.body.user_id || null,
+			performed_by_name: req.body.user_name || null,
+			project_id: project_id,
+			meta: { item_code, quantity, amount }
+		});
 	} catch (error) {
 		console.error("Error creating BOQ:", error);
 		if (error.code === '23503') {
@@ -332,6 +344,18 @@ router.put("/:id", upload.single("boq_file"), async (req, res) => {
 		}
 
 		res.json(result.rows[0]);
+
+		// Log Activity
+		logActivity({
+			action: "updated",
+			entity_type: "boq",
+			entity_id: id,
+			entity_name: result.rows[0].description || result.rows[0].item_code,
+			performed_by: req.body.user_id || null,
+			performed_by_name: req.body.user_name || null,
+			project_id: result.rows[0].project_id,
+			meta: { updates: req.body }
+		});
 	} catch (error) {
 		console.error("Error updating BOQ:", error);
 		res.status(500).json({ error: "Internal Server Error" });
@@ -377,9 +401,21 @@ router.delete("/:id", async (req, res) => {
 		}
 
 		const deleteQuery = "DELETE FROM boqs WHERE boq_id = $1 RETURNING *";
-		await pool.query(deleteQuery, [id]);
+		const delResult = await pool.query(deleteQuery, [id]);
 
 		res.json({ message: "BOQ deleted successfully" });
+
+		// Log Activity
+		logActivity({
+			action: "deleted",
+			entity_type: "boq",
+			entity_id: id,
+			entity_name: delResult.rows[0]?.description || `BOQ #${id}`,
+			performed_by: req.body.user_id || null,
+			performed_by_name: req.body.user_name || null,
+			project_id: delResult.rows[0]?.project_id,
+			meta: {}
+		});
 	} catch (error) {
 		console.error("Error deleting BOQ:", error);
 		res.status(500).json({ error: "Internal Server Error" });

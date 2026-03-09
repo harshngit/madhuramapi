@@ -283,6 +283,18 @@ router.put("/:id", async (req, res) => {
       return res.status(404).json({ error: "Vendor not found" });
     }
     res.json(result.rows[0]);
+
+    // Log Activity
+    logActivity({
+      action: "updated",
+      entity_type: "vendor",
+      entity_id: id,
+      entity_name: result.rows[0].vendor_name,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: result.rows[0].project_id,
+      meta: { updates: req.body }
+    });
   } catch (error) {
     console.error("Error updating vendor:", error);
     res.status(500).json({ error: error.message });
@@ -338,6 +350,18 @@ router.patch("/:id/status", async (req, res) => {
       return res.status(404).json({ error: "Vendor not found" });
     }
     res.json(result.rows[0]);
+
+    // Log Activity
+    logActivity({
+      action: "updated",
+      entity_type: "vendor",
+      entity_id: id,
+      entity_name: result.rows[0].vendor_name,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: result.rows[0].project_id,
+      meta: { status_change: status }
+    });
   } catch (error) {
     console.error("Error updating vendor status:", error);
     res.status(500).json({ error: error.message });

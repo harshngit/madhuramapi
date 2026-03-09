@@ -3,8 +3,7 @@ const router = express.Router();
 const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
-const { logActivity } = require("./dashboard"); // adjust path if needed
-
+const { logActivity } = require("./dashboard");
 const fs = require("fs");
 
 // Ensure upload directory exists
@@ -68,6 +67,18 @@ router.post("/upload", upload.single("file"), (req, res) => {
   }
   const filePath = `/uploads/dc/${req.file.filename}`;
   res.json({ filePath });
+
+  if (req.body.user_id) {
+    logActivity({
+      action: "uploaded",
+      entity_type: "dc_file",
+      entity_id: null,
+      entity_name: req.file.originalname,
+      performed_by: req.body.user_id,
+      performed_by_name: req.body.user_name || null,
+      meta: { filePath }
+    });
+  }
 });
 
 /**
@@ -180,6 +191,18 @@ router.post("/", async (req, res) => {
       ]
     );
     res.status(201).json(result.rows[0]);
+
+    // Log Activity
+    logActivity({
+      action: "created",
+      entity_type: "delivery_challan",
+      entity_id: result.rows[0].dc_id,
+      entity_name: challan_number,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: project_id,
+      meta: { po_id, po_number }
+    });
   } catch (error) {
     console.error("Error creating Delivery Challan:", error);
     res.status(500).json({ error: error.message });
@@ -404,6 +427,18 @@ router.put("/:id", async (req, res) => {
     );
 
     res.json(result.rows[0]);
+
+    // Log Activity
+    logActivity({
+      action: "updated",
+      entity_type: "delivery_challan",
+      entity_id: id,
+      entity_name: result.rows[0].challan_number,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: result.rows[0].project_id,
+      meta: { updates: req.body }
+    });
   } catch (error) {
     console.error("Error updating Delivery Challan:", error);
     res.status(500).json({ error: error.message });
@@ -439,6 +474,18 @@ router.delete("/:id", async (req, res) => {
       return res.status(404).json({ error: "Delivery Challan not found" });
     }
     res.json({ message: "Delivery Challan deleted successfully" });
+
+    // Log Activity
+    logActivity({
+      action: "deleted",
+      entity_type: "delivery_challan",
+      entity_id: id,
+      entity_name: result.rows[0].challan_number,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: result.rows[0].project_id,
+      meta: {}
+    });
   } catch (error) {
     console.error("Error deleting Delivery Challan:", error);
     res.status(500).json({ error: error.message });

@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { pool } = require("../db");
+const { logActivity } = require("./dashboard");
 
 /**
  * @swagger
@@ -92,6 +93,18 @@ router.post("/", async (req, res) => {
 
     const result = await pool.query(query, values);
     res.status(201).json(result.rows[0]);
+
+    // Log Activity
+    logActivity({
+      action: "created",
+      entity_type: "inventory",
+      entity_id: result.rows[0].inventory_id,
+      entity_name: result.rows[0].name,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: project_id,
+      meta: { brand, quantity, price }
+    });
   } catch (error) {
     console.error("Error creating inventory item:", error);
     if (error.code === "23503") {
@@ -155,6 +168,18 @@ router.get("/:id", async (req, res) => {
     }
 
     res.json(result.rows[0]);
+
+    // Log Activity
+    logActivity({
+      action: "updated",
+      entity_type: "inventory",
+      entity_id: id,
+      entity_name: result.rows[0].name,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: result.rows[0].project_id,
+      meta: { updates: req.body }
+    });
   } catch (error) {
     console.error("Error fetching inventory item:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -254,6 +279,18 @@ router.put("/:id", async (req, res) => {
     }
 
     res.json(result.rows[0]);
+
+    // Log Activity
+    logActivity({
+      action: "updated",
+      entity_type: "inventory",
+      entity_id: id,
+      entity_name: result.rows[0].name,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: result.rows[0].project_id,
+      meta: { stockin_update: stockin }
+    });
   } catch (error) {
     console.error("Error updating inventory item:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -291,6 +328,18 @@ router.delete("/:id", async (req, res) => {
     }
 
     res.json({ message: "Inventory item deleted successfully" });
+
+    // Log Activity
+    logActivity({
+      action: "deleted",
+      entity_type: "inventory",
+      entity_id: id,
+      entity_name: result.rows[0].name,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: result.rows[0].project_id,
+      meta: {}
+    });
   } catch (error) {
     console.error("Error deleting inventory item:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -344,6 +393,18 @@ router.patch("/:id/stockin", async (req, res) => {
     }
 
     res.json(result.rows[0]);
+
+    // Log Activity
+    logActivity({
+      action: "updated",
+      entity_type: "inventory",
+      entity_id: id,
+      entity_name: result.rows[0].name,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: result.rows[0].project_id,
+      meta: { billing_update: billing }
+    });
   } catch (error) {
     console.error("Error updating stockin status:", error);
     res.status(500).json({ error: "Internal Server Error" });

@@ -84,7 +84,9 @@ function logActivity({
     .then(({ rows }) => {
       broadcast({ type: "NEW_ACTIVITY", data: rows[0] });
 
-      // Save notification for the user who performed the action
+      // Save notification for the user who performed the action (or others?)
+      // Typically notifications are for OTHER users, but current implementation logs for performed_by.
+      // We'll stick to existing logic unless asked otherwise.
       if (performed_by) {
         const message = buildNotificationMessage(action, entity_type, entity_name);
         pool.query(
@@ -543,4 +545,9 @@ function wsHandler(ws) {
   });
 }
 
-module.exports = { router, logActivity, wsHandler };
+module.exports = {
+  router,
+  logActivity,
+  wsHandler,
+  broadcast
+};

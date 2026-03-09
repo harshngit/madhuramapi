@@ -115,6 +115,19 @@ router.post("/upload", upload.single("file"), (req, res) => {
   // Return the relative path to be stored in the database
   const filePath = `/uploads/mir/${req.file.filename}`;
   res.json({ filePath });
+
+  // Log Activity for upload
+  if (req.body.user_id) {
+    logActivity({
+      action: "uploaded",
+      entity_type: "mir_file",
+      entity_id: null,
+      entity_name: req.file.originalname,
+      performed_by: req.body.user_id,
+      performed_by_name: req.body.user_name || null,
+      meta: { filePath }
+    });
+  }
 });
 
 /**
@@ -250,6 +263,18 @@ router.post("/", async (req, res) => {
 
     const result = await pool.query(query, values);
     res.status(201).json(result.rows[0]);
+
+    // Log Activity
+    logActivity({
+      action: "created",
+      entity_type: "mir",
+      entity_id: result.rows[0].mir_id,
+      entity_name: result.rows[0].mir_refrence_no || `MIR #${result.rows[0].mir_id}`,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: result.rows[0].project_id,
+      meta: { mir_refrence_no }
+    });
   } catch (error) {
     console.error("Error creating MIR:", error);
     if (error.code === '23503') {
@@ -466,6 +491,18 @@ router.put("/:id", async (req, res) => {
     }
 
     res.json(result.rows[0]);
+
+    // Log Activity
+    logActivity({
+      action: "updated",
+      entity_type: "mir",
+      entity_id: id,
+      entity_name: result.rows[0].mir_refrence_no || `MIR #${result.rows[0].mir_id}`,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: result.rows[0].project_id,
+      meta: { updates: req.body }
+    });
   } catch (error) {
     console.error("Error updating MIR:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -498,6 +535,18 @@ router.delete("/:id", async (req, res) => {
     }
 
     res.json({ message: "MIR deleted successfully" });
+
+    // Log Activity
+    logActivity({
+      action: "deleted",
+      entity_type: "mir",
+      entity_id: id,
+      entity_name: result.rows[0].mir_refrence_no || `MIR #${result.rows[0].mir_id}`,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: result.rows[0].project_id,
+      meta: {}
+    });
   } catch (error) {
     console.error("Error deleting MIR:", error);
     res.status(500).json({ error: "Internal Server Error" });

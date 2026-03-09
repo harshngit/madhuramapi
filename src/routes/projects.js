@@ -302,6 +302,18 @@ router.get("/:id", async (req, res) => {
     }
 
     res.json(result.rows[0]);
+
+    // Log Activity
+    logActivity({
+      action: "updated",
+      entity_type: "project",
+      entity_id: id,
+      entity_name: result.rows[0].project_name,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: id,
+      meta: { updates: req.body }
+    });
   } catch (error) {
     console.error("Get project error:", error);
     res.status(500).json({ error: "Failed to fetch project" });

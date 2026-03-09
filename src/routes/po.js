@@ -71,6 +71,18 @@ router.post("/upload", upload.single("file"), (req, res) => {
   // Return the relative path to be stored in the database
   const filePath = `/uploads/po/${req.file.filename}`;
   res.json({ filePath });
+
+  if (req.body.user_id) {
+    logActivity({
+      action: "uploaded",
+      entity_type: "po_file",
+      entity_id: null,
+      entity_name: req.file.originalname,
+      performed_by: req.body.user_id,
+      performed_by_name: req.body.user_name || null,
+      meta: { filePath }
+    });
+  }
 });
 
 /**
@@ -506,6 +518,18 @@ router.put("/:id", async (req, res) => {
       return res.status(404).json({ error: "PO not found" });
     }
     res.json(result.rows[0]);
+
+    // Log Activity
+    logActivity({
+      action: "updated",
+      entity_type: "po",
+      entity_id: id,
+      entity_name: `PO #${result.rows[0].po_id}`,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: result.rows[0].project_id,
+      meta: { updates: req.body }
+    });
   } catch (error) {
     console.error("Error updating PO:", error);
     res.status(500).json({ error: error.message });

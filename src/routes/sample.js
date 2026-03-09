@@ -138,6 +138,18 @@ router.post("/upload", upload.array("file"), (req, res) => {
   }
   const filePaths = req.files.map((f) => `/uploads/sample/${f.filename}`);
   res.json({ filePaths });
+
+  if (req.body.user_id) {
+    logActivity({
+      action: "uploaded",
+      entity_type: "sample_files",
+      entity_id: null,
+      entity_name: `${req.files.length} files`,
+      performed_by: req.body.user_id,
+      performed_by_name: req.body.user_name || null,
+      meta: { filePaths }
+    });
+  }
 });
 
 /**
@@ -442,6 +454,18 @@ router.put("/:id", async (req, res) => {
     }
 
     res.json(result.rows[0]);
+
+    // Log Activity
+    logActivity({
+      action: "updated",
+      entity_type: "sample",
+      entity_id: id,
+      entity_name: result.rows[0].site_name || `Sample #${id}`,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: result.rows[0].project_id,
+      meta: { updates: req.body }
+    });
   } catch (error) {
     console.error("Error updating sample:", error);
     res.status(500).json({ error: "Internal Server Error" });

@@ -71,6 +71,18 @@ router.post("/upload", upload.single("file"), (req, res) => {
   // Return the relative path to be stored in the database
   const filePath = `/uploads/itr/${req.file.filename}`;
   res.json({ filePath });
+
+  if (req.body.user_id) {
+    logActivity({
+      action: "uploaded",
+      entity_type: "itr_file",
+      entity_id: null,
+      entity_name: req.file.originalname,
+      performed_by: req.body.user_id,
+      performed_by_name: req.body.user_name || null,
+      meta: { filePath }
+    });
+  }
 });
 
 /**
@@ -290,6 +302,18 @@ router.post("/", async (req, res) => {
       ]
     );
     res.status(201).json(result.rows[0]);
+
+    // Log Activity
+    logActivity({
+      action: "created",
+      entity_type: "itr",
+      entity_id: result.rows[0].itr_id,
+      entity_name: `ITR #${result.rows[0].itr_id}`,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: project_id,
+      meta: { result_code }
+    });
   } catch (error) {
     console.error("Error creating ITR:", error);
     res.status(500).json({ error: error.message });
@@ -443,6 +467,18 @@ router.put("/:id", async (req, res) => {
       return res.status(404).json({ error: "ITR not found" });
     }
     res.json(result.rows[0]);
+
+    // Log Activity
+    logActivity({
+      action: "updated",
+      entity_type: "itr",
+      entity_id: id,
+      entity_name: `ITR #${id}`,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: result.rows[0].project_id,
+      meta: { updates: req.body }
+    });
   } catch (error) {
     console.error("Error updating ITR:", error);
     res.status(500).json({ error: error.message });
@@ -478,6 +514,18 @@ router.delete("/:id", async (req, res) => {
       return res.status(404).json({ error: "ITR not found" });
     }
     res.json({ message: "ITR deleted successfully" });
+
+    // Log Activity
+    logActivity({
+      action: "deleted",
+      entity_type: "itr",
+      entity_id: id,
+      entity_name: `ITR #${id}`,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: result.rows[0].project_id,
+      meta: {}
+    });
   } catch (error) {
     console.error("Error deleting ITR:", error);
     res.status(500).json({ error: error.message });

@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { pool } = require("../db");
+const { logActivity } = require("./dashboard");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
@@ -78,6 +79,21 @@ router.post("/upload", upload.single("file"), (req, res) => {
     filename: filename, 
     filePath: filePath 
   });
+
+  // Log Activity for upload (optional, but good for tracking)
+  // Since this is just upload, we might not have user info unless passed in query or form fields (multer handles form fields but only if text fields come before file)
+  // Let's assume user_id might be in req.body if sent.
+  if (req.body.user_id) {
+    logActivity({
+      action: "uploaded",
+      entity_type: "price_list_file",
+      entity_id: null,
+      entity_name: filename,
+      performed_by: req.body.user_id,
+      performed_by_name: req.body.user_name || null,
+      meta: { filePath }
+    });
+  }
 });
 
 /**
@@ -315,6 +331,18 @@ router.post("/", async (req, res) => {
       price_list: priceListRes.rows[0],
       items_count: items ? items.length : 0 
     });
+
+    // Log Activity
+    logActivity({
+      action: "created",
+      entity_type: "price_list",
+      entity_id: priceListRes.rows[0].price_list_id,
+      entity_name: version_name || `Price List #${priceListRes.rows[0].price_list_id}`,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: null, // vendor price list is not directly linked to project, but vendor might be.
+      meta: { vendor_id, items_count: items ? items.length : 0 }
+    });
   } catch (error) {
     await client.query("ROLLBACK");
     console.error("Error creating price list:", error);
@@ -395,6 +423,17 @@ router.put("/:id", async (req, res) => {
       message: "Price list updated successfully", 
       price_list: updateRes.rows[0]
     });
+
+    // Log Activity
+    logActivity({
+      action: "updated",
+      entity_type: "price_list",
+      entity_id: id,
+      entity_name: updateRes.rows[0].version_name,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      meta: { status, version_name }
+    });
   } catch (error) {
     await client.query("ROLLBACK");
     console.error("Error updating price list:", error);
@@ -450,6 +489,17 @@ router.delete("/:id", async (req, res) => {
     }
 
     res.json({ message: "Price list deleted successfully" });
+
+    // Log Activity
+    logActivity({
+      action: "deleted",
+      entity_type: "price_list",
+      entity_id: id,
+      entity_name: fileRes.rows[0]?.version_name || "Price List", // Need to fetch name if possible, but fileRes only selects file_path
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      meta: {}
+    });
   } catch (error) {
     console.error("Error deleting price list:", error);
     res.status(500).json({ error: error.message });
@@ -517,6 +567,17 @@ router.patch("/:id/status", async (req, res) => {
     res.json({ 
       message: "Status updated successfully", 
       price_list: result.rows[0] 
+    });
+
+    // Log Activity
+    logActivity({
+      action: "updated",
+      entity_type: "price_list",
+      entity_id: id,
+      entity_name: result.rows[0].version_name,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      meta: { status_change: status }
     });
   } catch (error) {
     console.error("Error updating price list status:", error);
