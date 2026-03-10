@@ -132,6 +132,329 @@ router.get("/vendor/:vendorId", async (req, res) => {
 
 /**
  * @swagger
+ * /api/vendor-price-list/compare:
+ *   get:
+ *     summary: Search items across vendors (latest active price list per vendor by default) and return grouped data for comparison
+ *     tags: [Vendor Price List]
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         schema:
+ *           type: string
+ *         description: Free text search (matches item_name, product_name, category, item_code, hsn_code)
+ *       - in: query
+ *         name: item_name
+ *         schema:
+ *           type: string
+ *         description: Search by item name (matches items_name)
+ *       - in: query
+ *         name: product_name
+ *         schema:
+ *           type: string
+ *         description: Search by product name
+ *       - in: query
+ *         name: category
+ *         schema:
+ *           type: string
+ *         description: Search by category
+ *       - in: query
+ *         name: vendor_id
+ *         schema:
+ *           type: integer
+ *         description: Filter by a single vendor_id
+ *       - in: query
+ *         name: vendor_ids
+ *         schema:
+ *           type: string
+ *         description: Filter by multiple vendor_ids (comma-separated), e.g. "1,2,3"
+ *       - in: query
+ *         name: project_id
+ *         schema:
+ *           type: integer
+ *         description: Filter vendors by project_id
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [active, inactive, archived, all]
+ *           default: active
+ *         description: Price list status filter. Default is active (recommended).
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 500
+ *         description: Max rows to scan before grouping (max 2000).
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *     responses:
+ *       200:
+ *         description: Grouped comparison results with full vendor + price list data (active lists by default)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 count:
+ *                   type: integer
+ *                 groups_count:
+ *                   type: integer
+ *                 groups:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       compare_key:
+ *                         type: string
+ *                       items_name:
+ *                         type: string
+ *                       product_name:
+ *                         type: string
+ *                       category:
+ *                         type: string
+ *                       item_code:
+ *                         type: string
+ *                       hsn_code:
+ *                         type: string
+ *                       size_inch:
+ *                         type: string
+ *                       size_mm:
+ *                         type: string
+ *                       offers:
+ *                         type: array
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             vendor_id:
+ *                               type: integer
+ *                             vendor_name:
+ *                               type: string
+ *                             vendor_company_name:
+ *                               type: string
+ *                             project_id:
+ *                               type: integer
+ *                             price_list_id:
+ *                               type: integer
+ *                             version_name:
+ *                               type: string
+ *                             price_list_status:
+ *                               type: string
+ *                               enum: [active, inactive, archived]
+ *                             file_path:
+ *                               type: string
+ *                             price_list_created_at:
+ *                               type: string
+ *                               format: date-time
+ *                             item_id:
+ *                               type: integer
+ *                             price_per_pic:
+ *                               type: number
+ *                             discount_price:
+ *                               type: number
+ *                             net_price:
+ *                               type: number
+ *       500:
+ *         description: Server error
+ */
+router.get("/compare", async (req, res) => {
+  const {
+    q,
+    item_name,
+    product_name,
+    category,
+    vendor_id,
+    vendor_ids,
+    project_id,
+    status,
+    limit,
+    offset,
+  } = req.query;
+
+  const statusFilter = status && typeof status === "string" ? status : "active";
+
+  const parsedLimit = Math.min(
+    Math.max(parseInt(limit, 10) || 500, 1),
+    2000
+  );
+  const parsedOffset = Math.max(parseInt(offset, 10) || 0, 0);
+
+  const vendorIdList = [];
+  if (vendor_id !== undefined && vendor_id !== null && vendor_id !== "") {
+    const n = Number(vendor_id);
+    if (!Number.isNaN(n)) vendorIdList.push(n);
+  }
+  if (typeof vendor_ids === "string" && vendor_ids.trim()) {
+    for (const part of vendor_ids.split(",")) {
+      const n = Number(part.trim());
+      if (!Number.isNaN(n)) vendorIdList.push(n);
+    }
+  }
+
+  const params = [];
+  const vplWhere = [];
+
+  if (statusFilter !== "all") {
+    params.push(statusFilter);
+    vplWhere.push(`vpl.status = $${params.length}`);
+  }
+
+  if (vendorIdList.length > 0) {
+    params.push(vendorIdList);
+    vplWhere.push(`vpl.vendor_id = ANY($${params.length}::int[])`);
+  }
+
+  const chosenPriceListsCte = `
+    chosen_price_lists AS (
+      SELECT DISTINCT ON (vpl.vendor_id) vpl.*
+      FROM vendor_price_lists vpl
+      ${vplWhere.length ? `WHERE ${vplWhere.join(" AND ")}` : ""}
+      ORDER BY vpl.vendor_id, vpl.created_at DESC, vpl.price_list_id DESC
+    )
+  `;
+
+  const outerWhere = [];
+
+  if (project_id !== undefined && project_id !== null && project_id !== "") {
+    const n = Number(project_id);
+    if (!Number.isNaN(n)) {
+      params.push(n);
+      outerWhere.push(`v.project_id = $${params.length}`);
+    }
+  }
+
+  if (typeof item_name === "string" && item_name.trim()) {
+    params.push(`%${item_name.trim()}%`);
+    outerWhere.push(`vpli.items_name ILIKE $${params.length}`);
+  }
+
+  if (typeof product_name === "string" && product_name.trim()) {
+    params.push(`%${product_name.trim()}%`);
+    outerWhere.push(`vpli.product_name ILIKE $${params.length}`);
+  }
+
+  if (typeof category === "string" && category.trim()) {
+    params.push(`%${category.trim()}%`);
+    outerWhere.push(`vpli.category ILIKE $${params.length}`);
+  }
+
+  if (typeof q === "string" && q.trim()) {
+    params.push(`%${q.trim()}%`);
+    const p = `$${params.length}`;
+    outerWhere.push(
+      `(vpli.items_name ILIKE ${p} OR vpli.product_name ILIKE ${p} OR vpli.category ILIKE ${p} OR vpli.item_code ILIKE ${p} OR vpli.hsn_code ILIKE ${p})`
+    );
+  }
+
+  params.push(parsedLimit);
+  const limitParam = `$${params.length}`;
+  params.push(parsedOffset);
+  const offsetParam = `$${params.length}`;
+
+  const sql = `
+    WITH
+    ${chosenPriceListsCte}
+    SELECT
+      v.vendor_id,
+      v.vendor_name,
+      v.vendor_company_name,
+      v.project_id,
+      vpl.price_list_id,
+      vpl.version_name,
+      vpl.status AS price_list_status,
+      vpl.file_path,
+      vpl.created_at AS price_list_created_at,
+      vpli.item_id,
+      vpli.items_name,
+      vpli.hsn_code,
+      vpli.item_code,
+      vpli.category,
+      vpli.product_name,
+      vpli.size_inch,
+      vpli.size_mm,
+      vpli.price_per_pic,
+      vpli.discount_price,
+      vpli.net_price
+    FROM chosen_price_lists vpl
+    JOIN vendors v ON v.vendor_id = vpl.vendor_id
+    JOIN vendor_price_list_items vpli ON vpli.price_list_id = vpl.price_list_id
+    ${outerWhere.length ? `WHERE ${outerWhere.join(" AND ")}` : ""}
+    ORDER BY
+      LOWER(COALESCE(vpli.items_name, vpli.product_name, '')) ASC,
+      LOWER(COALESCE(v.vendor_name, '')) ASC,
+      vpl.created_at DESC,
+      vpli.item_id ASC
+    LIMIT ${limitParam} OFFSET ${offsetParam}
+  `;
+
+  const normalize = (val) =>
+    String(val ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+
+  try {
+    const result = await pool.query(sql, params);
+
+    const groupsMap = new Map();
+    for (const row of result.rows) {
+      const code = normalize(row.item_code);
+      const key = code
+        ? `code:${code}|hsn:${normalize(row.hsn_code)}|inch:${normalize(
+            row.size_inch
+          )}|mm:${normalize(row.size_mm)}`
+        : `name:${normalize(row.items_name)}|product:${normalize(
+            row.product_name
+          )}|category:${normalize(row.category)}|hsn:${normalize(
+            row.hsn_code
+          )}|inch:${normalize(row.size_inch)}|mm:${normalize(row.size_mm)}`;
+
+      if (!groupsMap.has(key)) {
+        groupsMap.set(key, {
+          compare_key: key,
+          items_name: row.items_name,
+          product_name: row.product_name,
+          category: row.category,
+          item_code: row.item_code,
+          hsn_code: row.hsn_code,
+          size_inch: row.size_inch,
+          size_mm: row.size_mm,
+          offers: [],
+        });
+      }
+
+      groupsMap.get(key).offers.push({
+        vendor_id: row.vendor_id,
+        vendor_name: row.vendor_name,
+        vendor_company_name: row.vendor_company_name,
+        project_id: row.project_id,
+        price_list_id: row.price_list_id,
+        version_name: row.version_name,
+        price_list_status: row.price_list_status,
+        file_path: row.file_path,
+        price_list_created_at: row.price_list_created_at,
+        item_id: row.item_id,
+        price_per_pic: row.price_per_pic,
+        discount_price: row.discount_price,
+        net_price: row.net_price,
+      });
+    }
+
+    res.json({
+      count: result.rows.length,
+      groups_count: groupsMap.size,
+      groups: Array.from(groupsMap.values()),
+    });
+  } catch (error) {
+    console.error("Error comparing vendor price list items:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
  * /api/vendor-price-list/{id}:
  *   get:
  *     summary: Get a specific price list with items

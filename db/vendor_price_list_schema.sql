@@ -32,6 +32,10 @@ CREATE TABLE IF NOT EXISTS vendor_price_list_items (
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_vpl_vendor_id ON vendor_price_lists(vendor_id);
 CREATE INDEX IF NOT EXISTS idx_vpli_price_list_id ON vendor_price_list_items(price_list_id);
+CREATE INDEX IF NOT EXISTS idx_vpli_items_name_lower ON vendor_price_list_items (LOWER(items_name));
+CREATE INDEX IF NOT EXISTS idx_vpli_product_name_lower ON vendor_price_list_items (LOWER(product_name));
+CREATE INDEX IF NOT EXISTS idx_vpli_category_lower ON vendor_price_list_items (LOWER(category));
+CREATE INDEX IF NOT EXISTS idx_vpli_item_code_lower ON vendor_price_list_items (LOWER(item_code));
 
 -- 3. Update Vendors table to store array of price_list_ids (as requested)
 DO $$
