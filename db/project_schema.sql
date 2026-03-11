@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS mirs (
     pmc TEXT,
     contractor TEXT,
     vendor_code TEXT,
+    challan_no TEXT,
     mir_refrence_no TEXT,
     material_code TEXT,
     inspection_date_time TIMESTAMP,

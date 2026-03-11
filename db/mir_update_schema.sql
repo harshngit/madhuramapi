@@ -21,4 +21,14 @@ BEGIN
     ) THEN
         ALTER TABLE mirs ADD COLUMN items JSONB DEFAULT '[]'::jsonb;
     END IF;
+
+    -- Add challan_no column
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'mirs'
+        AND column_name = 'challan_no'
+    ) THEN
+        ALTER TABLE mirs ADD COLUMN challan_no TEXT;
+    END IF;
 END $$;

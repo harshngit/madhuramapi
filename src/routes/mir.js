@@ -48,6 +48,8 @@ const upload = multer({ storage: storage });
  *           type: string
  *         vendor_code:
  *           type: string
+ *         challan_no:
+ *           type: string
  *         mir_refrence_no:
  *           type: string
  *         material_code:
@@ -155,6 +157,8 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *                 type: string
  *               vendor_code:
  *                 type: string
+ *               challan_no:
+ *                 type: string
  *               mir_refrence_no:
  *                 type: string
  *               material_code:
@@ -220,6 +224,7 @@ router.post("/", async (req, res) => {
       pmc,
       contractor,
       vendor_code,
+      challan_no,
       mir_refrence_no,
       material_code,
       inspection_date_time,
@@ -235,10 +240,10 @@ router.post("/", async (req, res) => {
     const query = `
       INSERT INTO mirs (
         project_name, project_code, client_name, pmc, contractor, vendor_code,
-        mir_refrence_no, material_code, inspection_date_time, client_submission_date,
+        challan_no, mir_refrence_no, material_code, inspection_date_time, client_submission_date,
         refrence_docs_attached, mir_submited, dynamic_field, project_id, po_id, items
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING *;
     `;
 
@@ -249,6 +254,7 @@ router.post("/", async (req, res) => {
       pmc,
       contractor,
       vendor_code,
+      challan_no,
       mir_refrence_no,
       material_code,
       inspection_date_time,
@@ -407,6 +413,8 @@ router.get("/project/:projectId", async (req, res) => {
  *                 type: string
  *               vendor_code:
  *                 type: string
+ *               challan_no:
+ *                 type: string
  *               mir_refrence_no:
  *                 type: string
  *               material_code:
@@ -446,6 +454,7 @@ router.put("/:id", async (req, res) => {
       pmc,
       contractor,
       vendor_code,
+      challan_no,
       mir_refrence_no,
       material_code,
       inspection_date_time,
@@ -466,6 +475,7 @@ router.put("/:id", async (req, res) => {
     if (pmc !== undefined) { updateFields.push(`pmc = $${counter++}`); values.push(pmc); }
     if (contractor !== undefined) { updateFields.push(`contractor = $${counter++}`); values.push(contractor); }
     if (vendor_code !== undefined) { updateFields.push(`vendor_code = $${counter++}`); values.push(vendor_code); }
+    if (challan_no !== undefined) { updateFields.push(`challan_no = $${counter++}`); values.push(challan_no); }
     if (mir_refrence_no !== undefined) { updateFields.push(`mir_refrence_no = $${counter++}`); values.push(mir_refrence_no); }
     if (material_code !== undefined) { updateFields.push(`material_code = $${counter++}`); values.push(material_code); }
     if (inspection_date_time !== undefined) { updateFields.push(`inspection_date_time = $${counter++}`); values.push(inspection_date_time); }
