@@ -253,8 +253,6 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *                       CODE_3: { type: string, example: "Revise and Resubmit. Work may NOT proceed" }
  *                       CODE_4: { type: string, example: "For information and records only. Work may proceed" }
  *
- *               user_id:   { type: integer, example: 1 }
- *               user_name: { type: string,  example: "Admin User" }
  *
  *     responses:
  *       201:
