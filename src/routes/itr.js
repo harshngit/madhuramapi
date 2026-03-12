@@ -37,186 +37,7 @@ const getItrRefNo = (itr_header) =>
  */
 
 // =============================================================================
-// STAFF ROUTES
-// =============================================================================
-
-/**
- * @swagger
- * /api/itr/staff:
- *   get:
- *     summary: Get all staff members
- *     tags: [ITR]
- *     responses:
- *       200:
- *         description: List of all staff
- *       500:
- *         description: Internal server error
- */
-router.get("/staff", async (req, res) => {
-  try {
-    const result = await pool.query(
-      "SELECT * FROM staff ORDER BY staff_name ASC"
-    );
-    res.json(result.rows);
-  } catch (error) {
-    console.error("Error fetching staff:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * @swagger
- * /api/itr/staff:
- *   post:
- *     summary: Create a new staff member
- *     tags: [ITR]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - staff_name
- *               - staff_number
- *             properties:
- *               staff_name:
- *                 type: string
- *                 example: "Ravi Kumar"
- *               staff_number:
- *                 type: string
- *                 example: "STF-001"
- *     responses:
- *       201:
- *         description: Staff created successfully
- *       400:
- *         description: staff_name and staff_number are required
- *       500:
- *         description: Internal server error
- */
-router.post("/staff", async (req, res) => {
-  const { staff_name, staff_number } = req.body;
-
-  if (!staff_name || !staff_number) {
-    return res.status(400).json({ error: "staff_name and staff_number are required" });
-  }
-
-  try {
-    const result = await pool.query(
-      `INSERT INTO staff (staff_name, staff_number)
-       VALUES ($1, $2) RETURNING *`,
-      [staff_name, staff_number]
-    );
-    res.status(201).json(result.rows[0]);
-  } catch (error) {
-    console.error("Error creating staff:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * @swagger
- * /api/itr/staff/{id}:
- *   put:
- *     summary: Update a staff member
- *     tags: [ITR]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               staff_name:   { type: string, example: "Ravi Kumar" }
- *               staff_number: { type: string, example: "STF-001" }
- *     responses:
- *       200:
- *         description: Staff updated successfully
- *       400:
- *         description: No fields to update
- *       404:
- *         description: Staff not found
- *       500:
- *         description: Internal server error
- */
-router.put("/staff/:id", async (req, res) => {
-  const { id } = req.params;
-  const { staff_name, staff_number } = req.body;
-
-  try {
-    const fields = [];
-    const values = [];
-    let c = 1;
-
-    if (staff_name   !== undefined) { fields.push(`staff_name = $${c++}`);   values.push(staff_name); }
-    if (staff_number !== undefined) { fields.push(`staff_number = $${c++}`); values.push(staff_number); }
-
-    if (fields.length === 0) {
-      return res.status(400).json({ error: "No fields to update" });
-    }
-
-    fields.push("updated_at = CURRENT_TIMESTAMP");
-    values.push(id);
-
-    const result = await pool.query(
-      `UPDATE staff SET ${fields.join(", ")} WHERE staff_id = $${c} RETURNING *`,
-      values
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Staff not found" });
-    }
-    res.json(result.rows[0]);
-  } catch (error) {
-    console.error("Error updating staff:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * @swagger
- * /api/itr/staff/{id}:
- *   delete:
- *     summary: Delete a staff member
- *     tags: [ITR]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: Staff deleted successfully
- *       404:
- *         description: Staff not found
- *       500:
- *         description: Internal server error
- */
-router.delete("/staff/:id", async (req, res) => {
-  const { id } = req.params;
-  try {
-    const result = await pool.query(
-      "DELETE FROM staff WHERE staff_id = $1 RETURNING *",
-      [id]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Staff not found" });
-    }
-    res.json({ message: "Staff deleted successfully" });
-  } catch (error) {
-    console.error("Error deleting staff:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// =============================================================================
-// FILE UPLOAD
+// FILE UPLOAD  —  POST /api/itr/upload
 // =============================================================================
 
 /**
@@ -289,6 +110,12 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *               project_id:
  *                 type: integer
  *                 example: 5
+ *               po_id:
+ *                 type: integer
+ *                 example: 10
+ *               mir_id:
+ *                 type: integer
+ *                 example: 3
  *
  *               project_info:
  *                 type: object
@@ -348,13 +175,11 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *
  *               shaft_details:
  *                 type: array
- *                 description: Each shaft entry includes assigned staff + valve quantities
+ *                 description: Each shaft entry includes flat staff fields + valve quantities
  *                 items:
  *                   type: object
  *                   properties:
- *                     shaft_no:
- *                       type: integer
- *                       example: 1
+ *                     shaft_no:     { type: integer, example: 1 }
  *                     staff_id:     { type: integer, example: 1 }
  *                     staff_name:   { type: string,  example: "Ravi Kumar" }
  *                     staff_number: { type: string,  example: "STF-001" }
@@ -442,6 +267,8 @@ router.post("/upload", upload.single("file"), (req, res) => {
 router.post("/", async (req, res) => {
   const {
     project_id,
+    po_id,
+    mir_id,
     project_info,
     itr_header,
     location,
@@ -468,14 +295,17 @@ router.post("/", async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO itrs (
-        project_id, project_info, itr_header, location, discipline,
+        project_id, po_id, mir_id,
+        project_info, itr_header, location, discipline,
         quantity, description_of_work, work_items, shaft_details,
         attachments, part_a_contractor, part_b_lodha_pmc,
         status, allowed_values, itr_ref_no
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
       RETURNING *`,
       [
         project_id,
+        po_id || null,
+        mir_id || null,
         toJson(project_info),
         toJson(itr_header),
         toJson(location),
@@ -610,6 +440,8 @@ router.get("/:id", async (req, res) => {
  *           schema:
  *             type: object
  *             properties:
+ *               po_id:               { type: integer }
+ *               mir_id:              { type: integer }
  *               project_info:        { type: object }
  *               itr_header:          { type: object }
  *               location:            { type: object }
@@ -638,6 +470,8 @@ router.get("/:id", async (req, res) => {
 router.put("/:id", async (req, res) => {
   const { id } = req.params;
   const {
+    po_id,
+    mir_id,
     project_info,
     itr_header,
     location,
@@ -662,6 +496,8 @@ router.put("/:id", async (req, res) => {
 
     const push = (col, val) => { fields.push(`${col} = $${c++}`); values.push(val); };
 
+    if (po_id               !== undefined) push("po_id",               po_id || null);
+    if (mir_id              !== undefined) push("mir_id",              mir_id || null);
     if (project_info        !== undefined) push("project_info",        toJson(project_info));
     if (itr_header          !== undefined) {
       push("itr_header",  toJson(itr_header));
