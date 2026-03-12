@@ -87,6 +87,9 @@ const ALLOWED_ROLES = new Set(["admin", "operational_manager", "po_officer", "la
  *               role:
  *                 type: string
  *                 enum: [admin, operational_manager, po_officer, labour]
+ *               project_id:
+ *                 type: integer
+ *                 description: Required for non-admin roles. Admin can access all projects.
  *               project:
  *                 type: array
  *                 items:
@@ -143,6 +146,7 @@ router.post("/signup", async (req, res) => {
       email,
       phone_number,
       password,
+      project_id,
       project,
       project_list,
       role,
@@ -184,13 +188,29 @@ router.post("/signup", async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(String(password), 12);
-    const projects = Array.isArray(project)
+    const projectsFromArray = Array.isArray(project)
       ? project.map((value) => String(value))
       : Array.isArray(project_list)
         ? project_list.map((value) => String(value))
         : project
           ? [String(project).trim()]
           : [];
+
+    const projectIdValue =
+      project_id === undefined || project_id === null || project_id === ""
+        ? null
+        : String(project_id).trim();
+
+    const projects =
+      roleValue === "admin"
+        ? projectsFromArray
+        : projectIdValue
+          ? [projectIdValue]
+          : projectsFromArray;
+
+    if (roleValue !== "admin" && (!projects || projects.length === 0)) {
+      return res.status(400).json({ error: "project_id is required for non-admin roles" });
+    }
 
     const insert = await pool.query(
       `INSERT INTO auth_users (name, email, phone_number, password_hash, role, project_list)
@@ -202,16 +222,17 @@ router.post("/signup", async (req, res) => {
     const user = sanitizeUser(insert.rows[0]);
     const token = buildToken(user);
 
-    return res.status(201).json({ token, user });
     logActivity({
-  action: "created",
-  entity_type: "user",
-  entity_id: result.rows[0].user_id,
-  entity_name: result.rows[0].name,
-  performed_by: result.rows[0].user_id,
-  performed_by_name: result.rows[0].name,
-  meta: { email: result.rows[0].email, role: result.rows[0].role },
-});
+      action: "created",
+      entity_type: "user",
+      entity_id: insert.rows[0].user_id,
+      entity_name: insert.rows[0].name,
+      performed_by: req.body.user_id || insert.rows[0].user_id,
+      performed_by_name: req.body.user_name || insert.rows[0].name,
+      meta: { email: insert.rows[0].email, role: insert.rows[0].role, project_list: insert.rows[0].project_list },
+    });
+
+    return res.status(201).json({ token, user });
   } catch (error) { 
     console.error("Signup error:", error);
     return res.status(500).json({ error: "failed to sign up" });
@@ -383,8 +404,14 @@ router.post("/forgot-password", async (req, res) => {
  * @swagger
  * /api/auth/users:
  *   get:
- *     summary: Get all users
+ *     summary: Get users (optionally filter by project_id)
  *     tags: [Auth]
+ *     parameters:
+ *       - in: query
+ *         name: project_id
+ *         schema:
+ *           type: integer
+ *         description: If provided, returns users assigned to this project_id
  *     responses:
  *       200:
  *         description: List of users
@@ -399,9 +426,23 @@ router.post("/forgot-password", async (req, res) => {
  */
 router.get("/users", async (req, res) => {
   try {
-    const result = await pool.query(
-      "SELECT user_id, name, email, phone_number, role, project_list FROM auth_users ORDER BY name ASC"
-    );
+    const { project_id } = req.query;
+    const projectIdValue =
+      project_id === undefined || project_id === null || project_id === ""
+        ? null
+        : String(project_id).trim();
+
+    const result = projectIdValue
+      ? await pool.query(
+          `SELECT user_id, name, email, phone_number, role, project_list
+           FROM auth_users
+           WHERE $1 = ANY(project_list)
+           ORDER BY name ASC`,
+          [projectIdValue]
+        )
+      : await pool.query(
+          "SELECT user_id, name, email, phone_number, role, project_list FROM auth_users ORDER BY name ASC"
+        );
     return res.json(result.rows);
   } catch (error) {
     console.error("Get users error:", error);

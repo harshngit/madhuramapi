@@ -17,6 +17,19 @@ CREATE TABLE IF NOT EXISTS projects (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'auth_users_project_id_fkey'
+    ) THEN
+        ALTER TABLE auth_users
+        ADD CONSTRAINT auth_users_project_id_fkey
+        FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS vendors (
     vendor_id SERIAL PRIMARY KEY,
     project_id INTEGER REFERENCES projects(project_id) ON DELETE CASCADE,
@@ -122,6 +135,38 @@ CREATE TABLE IF NOT EXISTS samples (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS purchase_requisitions (
+    pr_id SERIAL PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(project_id) ON DELETE CASCADE,
+    sample_id INTEGER REFERENCES samples(sample_id) ON DELETE SET NULL,
+    project_name TEXT,
+    workorder_no TEXT,
+    location TEXT,
+    mirno TEXT,
+    urgency TEXT,
+    date DATE,
+    approved_by TEXT,
+    pr_file_path TEXT,
+    signature_file_path TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS purchase_requisition_items (
+    pr_item_id SERIAL PRIMARY KEY,
+    pr_id INTEGER REFERENCES purchase_requisitions(pr_id) ON DELETE CASCADE,
+    material_description TEXT,
+    unit TEXT,
+    req_qty NUMERIC,
+    make TEXT,
+    place_of_utilisation TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_pr_project_id ON purchase_requisitions(project_id);
+CREATE INDEX IF NOT EXISTS idx_pr_sample_id ON purchase_requisitions(sample_id);
+CREATE INDEX IF NOT EXISTS idx_pr_items_pr_id ON purchase_requisition_items(pr_id);
 
 CREATE TABLE IF NOT EXISTS pos (
     po_id SERIAL PRIMARY KEY,

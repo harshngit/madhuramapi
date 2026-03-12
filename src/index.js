@@ -21,6 +21,7 @@ const inventoryRoutes = require("./routes/inventory");
 const deliveryChallanRoutes = require("./routes/delivery_challan");
 const vendorRoutes = require("./routes/vendor");
 const vendorPriceListRoutes = require("./routes/vendor_price_list");
+const prRoutes = require("./routes/pr");
 
 // ✅ NEW: Dashboard + Activity + WebSocket
 const { router: dashboardRouter, wsHandler } = require("./routes/dashboard");
@@ -60,6 +61,7 @@ app.use("/api/inventory", inventoryRoutes);
 app.use("/api/dc", deliveryChallanRoutes);
 app.use("/api/vendors", vendorRoutes);
 app.use("/api/vendor-price-list", vendorPriceListRoutes);
+app.use("/api/pr", prRoutes);
 
 // ✅ NEW: Dashboard routes
 app.use("/api/dashboard", dashboardRouter);

@@ -9,10 +9,25 @@ CREATE TABLE IF NOT EXISTS auth_users (
   password_reset_token TEXT,
   password_reset_expires TIMESTAMPTZ,
   role TEXT NOT NULL CHECK (role IN ('admin', 'operational_manager', 'po_officer', 'labour')),
+  project_id INTEGER,
   project_list TEXT[] NOT NULL DEFAULT '{}'::text[],
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'auth_users'
+    AND column_name = 'project_id'
+  ) THEN
+    ALTER TABLE auth_users ADD COLUMN project_id INTEGER;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_auth_users_project_id ON auth_users(project_id);
 
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
