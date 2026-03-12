@@ -62,29 +62,52 @@ CREATE TABLE IF NOT EXISTS mirs (
     refrence_docs_attached TEXT,
     mir_submited BOOLEAN DEFAULT FALSE,
     dynamic_field JSONB DEFAULT '[]'::jsonb,
+    items JSONB DEFAULT '[]'::jsonb,
+    po_id INTEGER,
     project_id INTEGER REFERENCES projects(project_id) ON DELETE CASCADE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS itrs (
-    itr_id SERIAL PRIMARY KEY,
-    project_id INTEGER REFERENCES projects(project_id) ON DELETE CASCADE,
-    header_details JSONB DEFAULT '{}'::jsonb,
-    contractor_details JSONB DEFAULT '{}'::jsonb,
-    mep_clearance JSONB DEFAULT '{}'::jsonb,
-    surveyor_clearance JSONB DEFAULT '{}'::jsonb,
-    interface_clearance JSONB DEFAULT '{}'::jsonb,
-    contract_manager JSONB DEFAULT '{}'::jsonb,
-    pmc_comments TEXT,
-    engineer_civil JSONB DEFAULT '{}'::jsonb,
-    engineer_mep JSONB DEFAULT '{}'::jsonb,
-    tower_incharge JSONB DEFAULT '{}'::jsonb,
-    qaa_department JSONB DEFAULT '{}'::jsonb,
-    result_code TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+    CREATE TABLE IF NOT EXISTS itrs (
+        itr_id SERIAL PRIMARY KEY,
+        project_id INTEGER REFERENCES projects(project_id) ON DELETE CASCADE,
+        project_info JSONB DEFAULT '{}'::jsonb,
+        itr_header JSONB DEFAULT '{}'::jsonb,
+        location JSONB DEFAULT '{}'::jsonb,
+        discipline TEXT,
+        quantity JSONB DEFAULT '{}'::jsonb,
+        description_of_work TEXT,
+        work_items JSONB DEFAULT '[]'::jsonb,
+        shaft_details JSONB DEFAULT '[]'::jsonb,
+        attachments JSONB DEFAULT '{}'::jsonb,
+        part_a_contractor JSONB DEFAULT '{}'::jsonb,
+        part_b_lodha_pmc JSONB DEFAULT '{}'::jsonb,
+        status TEXT,
+        allowed_values JSONB DEFAULT '{}'::jsonb,
+        itr_ref_no TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+ALTER TABLE itrs
+ADD COLUMN IF NOT EXISTS project_info JSONB DEFAULT '{}'::jsonb,
+ADD COLUMN IF NOT EXISTS itr_header JSONB DEFAULT '{}'::jsonb,
+ADD COLUMN IF NOT EXISTS location JSONB DEFAULT '{}'::jsonb,
+ADD COLUMN IF NOT EXISTS discipline TEXT,
+ADD COLUMN IF NOT EXISTS quantity JSONB DEFAULT '{}'::jsonb,
+ADD COLUMN IF NOT EXISTS description_of_work TEXT,
+ADD COLUMN IF NOT EXISTS work_items JSONB DEFAULT '[]'::jsonb,
+ADD COLUMN IF NOT EXISTS shaft_details JSONB DEFAULT '[]'::jsonb,
+ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '{}'::jsonb,
+ADD COLUMN IF NOT EXISTS part_a_contractor JSONB DEFAULT '{}'::jsonb,
+ADD COLUMN IF NOT EXISTS part_b_lodha_pmc JSONB DEFAULT '{}'::jsonb,
+ADD COLUMN IF NOT EXISTS status TEXT,
+ADD COLUMN IF NOT EXISTS allowed_values JSONB DEFAULT '{}'::jsonb,
+ADD COLUMN IF NOT EXISTS itr_ref_no TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_itrs_project_id ON itrs(project_id);
+CREATE INDEX IF NOT EXISTS idx_itrs_itr_ref_no_lower ON itrs(LOWER(itr_ref_no));
 
 CREATE TABLE IF NOT EXISTS samples (
     sample_id SERIAL PRIMARY KEY,
@@ -152,3 +175,16 @@ CREATE TABLE IF NOT EXISTS delivery_challans (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'mirs_po_id_fkey'
+    ) THEN
+        ALTER TABLE mirs
+        ADD CONSTRAINT mirs_po_id_fkey
+        FOREIGN KEY (po_id) REFERENCES pos(po_id) ON DELETE SET NULL;
+    END IF;
+END $$;
