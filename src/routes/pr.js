@@ -11,7 +11,7 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-const signatureUploadDir = path.join(__dirname, "../../uploads/pr_signatures");
+const signatureUploadDir = path.join(__dirname, "../../uploads/pr_signatu res");
 if (!fs.existsSync(signatureUploadDir)) {
   fs.mkdirSync(signatureUploadDir, { recursive: true });
 }

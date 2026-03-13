@@ -25,9 +25,14 @@ const storage = multer.diskStorage({
   },
 });
 
+const PROJECT_UPLOAD_MAX_MB = Number(process.env.PROJECT_UPLOAD_MAX_MB || 100);
+const PROJECT_UPLOAD_MAX_BYTES = Math.max(1, PROJECT_UPLOAD_MAX_MB) * 1024 * 1024;
+
+const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value));
+
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+  limits: { fileSize: PROJECT_UPLOAD_MAX_BYTES }
 });
 
 const uploadFields = upload.fields([
@@ -40,7 +45,9 @@ const uploadMiddleware = (req, res, next) => {
   uploadFields(req, res, (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === "LIMIT_FILE_SIZE") {
-        return res.status(400).json({ error: "File size too large. Max limit is 100MB." });
+        return res
+          .status(400)
+          .json({ error: `File size too large. Max limit is ${Math.max(1, PROJECT_UPLOAD_MAX_MB)}MB.` });
       }
       return res.status(400).json({ error: `Upload error: ${err.message}` });
     } else if (err) {
@@ -181,6 +188,18 @@ router.post("/", uploadMiddleware, async (req, res) => {
       user_id,
     } = req.body;
 
+    const userIdValue = user_id === undefined || user_id === null || String(user_id).trim() === "" ? null : String(user_id).trim();
+
+    if (userIdValue !== null) {
+      if (!isUuid(userIdValue)) {
+        return res.status(400).json({ error: "Invalid user_id. Must be a UUID." });
+      }
+      const userExists = await pool.query("SELECT 1 FROM auth_users WHERE user_id = $1", [userIdValue]);
+      if (userExists.rowCount === 0) {
+        return res.status(400).json({ error: "Invalid user_id. User does not exist." });
+      }
+    }
+
     // Get the file names for uploaded files
     const work_order_file = req.files && req.files["work_order_file"] ? req.files["work_order_file"][0].filename : null;
     const mas_file = req.files && req.files["mas_file"] ? req.files["mas_file"][0].filename : null;
@@ -220,7 +239,7 @@ router.post("/", uploadMiddleware, async (req, res) => {
         samplesArr || [],
         mas_file,
         mlManagementArr || [],
-        user_id || null, // Allow null if not provided
+        userIdValue,
       ]
     );
 
@@ -237,6 +256,12 @@ router.post("/", uploadMiddleware, async (req, res) => {
 });
   } catch (error) {
     console.error("Create project error:", error);
+    if (error && error.code === "23503" && error.constraint === "projects_user_id_fkey") {
+      return res.status(400).json({ error: "Invalid user_id. User does not exist." });
+    }
+    if (error && error.code === "22P02") {
+      return res.status(400).json({ error: "Invalid user_id. Must be a UUID." });
+    }
     res.status(500).json({ error: "Failed to create project" });
   }
 });
