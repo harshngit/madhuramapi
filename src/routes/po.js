@@ -4,6 +4,7 @@ const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const { generatePOPdf } = require("../utils/po_pdf");
 const { logActivity } = require("./dashboard"); // adjust path if needed
 
 
@@ -579,5 +580,64 @@ router.delete("/:id", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE 1: Generate PO PDF from DB and return as download
+// GET /api/po/:id/pdf
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /api/po/{id}/pdf:
+ *   get:
+ *     summary: Generate and download a PDF for a PO
+ *     tags: [PO]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: PO ID
+ *     responses:
+ *       200:
+ *         description: PDF file stream
+ *         content:
+ *           application/pdf:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       404:
+ *         description: PO not found
+ *       500:
+ *         description: Internal server error
+ */
+router.get("/:id/pdf", async (req, res) => {
+  const { id } = req.params;
+  try {
+    // 1. Fetch PO from DB
+    const result = await pool.query("SELECT * FROM pos WHERE po_id = $1", [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "PO not found" });
+    }
+
+    const po = result.rows[0];
+
+    // 2. Generate PDF buffer
+    const pdfBuffer = await generatePOPdf(po);
+
+    // 3. Send as downloadable PDF
+    const filename = `PO_${po.order_no || id}_${Date.now()}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Length", pdfBuffer.length);
+    res.send(pdfBuffer);
+
+  } catch (error) {
+    console.error("Error generating PO PDF:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 module.exports = router;

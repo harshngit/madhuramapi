@@ -4,6 +4,7 @@ const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const nodemailer = require("nodemailer");
 const { logActivity } = require("./dashboard");
 
 const uploadDir = path.join(__dirname, "../../uploads/pr");
@@ -777,5 +778,506 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
-module.exports = router;
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE: Upload email attachments for a PR
+// POST /api/pr/:id/upload-email-attachment
+//
+// multipart/form-data — field name: "files" (supports multiple files)
+// Returns an array of { filePath, originalName } to pass into send-email
+// ─────────────────────────────────────────────────────────────────────────────
 
+const emailAttachmentDir = path.join(__dirname, "../../uploads/pr_email_attachments");
+if (!fs.existsSync(emailAttachmentDir)) {
+  fs.mkdirSync(emailAttachmentDir, { recursive: true });
+}
+
+const emailAttachmentStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, emailAttachmentDir),
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  },
+});
+
+const uploadEmailAttachment = multer({ storage: emailAttachmentStorage });
+
+/**
+ * @swagger
+ * /api/pr/{id}/upload-email-attachment:
+ *   post:
+ *     summary: Upload one or more attachments to be sent with the PR email
+ *     tags: [PR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: PR ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               files:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *                 description: One or more files to attach to the email
+ *     responses:
+ *       200:
+ *         description: Files uploaded successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 attachments:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       filePath:
+ *                         type: string
+ *                         example: /uploads/pr_email_attachments/1234567890-file.pdf
+ *                       originalName:
+ *                         type: string
+ *                         example: quotation.pdf
+ *       400:
+ *         description: No files uploaded
+ *       500:
+ *         description: Server error
+ */
+router.post(
+  "/:id/upload-email-attachment",
+  uploadEmailAttachment.array("files", 10),
+  async (req, res) => {
+    const { id } = req.params;
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "No files uploaded." });
+    }
+
+    try {
+      // Save each file record to pr_email_attachments table
+      const attachments = [];
+      for (const file of req.files) {
+        const filePath = `/uploads/pr_email_attachments/${file.filename}`;
+
+        await pool.query(
+          `INSERT INTO pr_email_attachments
+             (pr_id, file_path, original_name, mime_type, size_bytes, uploaded_by_user_id, uploaded_by_name)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            id,
+            filePath,
+            file.originalname,
+            file.mimetype,
+            file.size,
+            req.body.user_id   || null,
+            req.body.user_name || null,
+          ]
+        );
+
+        attachments.push({ filePath, originalName: file.originalname });
+      }
+
+      return res.status(200).json({
+        message: `${attachments.length} file(s) uploaded successfully.`,
+        attachments,
+      });
+    } catch (error) {
+      console.error("Error saving email attachment record:", error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE: Send PR Email
+// POST /api/pr/:id/send-email
+//
+// Request Body (JSON):
+// {
+//   "to"          : "approver@example.com",       // required
+//   "cc"          : ["manager@company.com"],       // optional
+//   "message"     : "Please review the PR.",       // optional
+//   "attachments" : [                              // optional — from upload-email-attachment
+//     {
+//       "filePath"     : "/uploads/pr_email_attachments/abc.pdf",
+//       "originalName" : "quotation.pdf"
+//     }
+//   ],
+//   "user_id"     : 1,                             // optional — for activity log
+//   "user_name"   : "Admin"                        // optional — for activity log
+// }
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /api/pr/{id}/send-email:
+ *   post:
+ *     summary: Send PR details via email with optional attachments
+ *     tags: [PR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: PR ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - to
+ *             properties:
+ *               to:
+ *                 type: string
+ *                 description: Recipient email address
+ *                 example: approver@example.com
+ *               cc:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: CC email addresses
+ *                 example: ["manager@company.com"]
+ *               message:
+ *                 type: string
+ *                 description: Custom message body (HTML supported)
+ *                 example: "Please review the attached Purchase Requisition."
+ *               attachments:
+ *                 type: array
+ *                 description: Files to attach — use filePath values returned by upload-email-attachment
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     filePath:
+ *                       type: string
+ *                       example: /uploads/pr_email_attachments/1234567890-file.pdf
+ *                     originalName:
+ *                       type: string
+ *                       example: quotation.pdf
+ *               user_id:
+ *                 type: integer
+ *               user_name:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Email sent successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 messageId:
+ *                   type: string
+ *                 to:
+ *                   type: string
+ *                 cc:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 log_saved:
+ *                   type: boolean
+ *       400:
+ *         description: Missing required fields
+ *       404:
+ *         description: PR not found
+ *       500:
+ *         description: Internal server error / email send failed
+ */
+router.post("/:id/send-email", async (req, res) => {
+  const { id } = req.params;
+  const { to, cc, message, attachments, user_id, user_name } = req.body;
+
+  if (!to) {
+    return res.status(400).json({ error: "Recipient email address ('to') is required." });
+  }
+
+  try {
+    // 1. Fetch PR with items from DB
+    const rows = await getPrList("pr.pr_id = $1", [id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "PR not found" });
+    }
+    const pr = rows[0];
+
+    // 2. Build Nodemailer transporter
+    //    Required .env vars:
+    //      SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, SMTP_FROM
+    const transporter = nodemailer.createTransport({
+      host:   process.env.SMTP_HOST,
+      port:   Number(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_SECURE === "true",
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+
+    // 3. Build HTML email body
+    const formatDate = (d) => {
+      if (!d) return "-";
+      const dt = new Date(d);
+      return isNaN(dt) ? d : dt.toLocaleDateString("en-IN");
+    };
+
+    let items = pr.items || [];
+    if (typeof items === "string") {
+      try { items = JSON.parse(items); } catch { items = []; }
+    }
+
+    const itemRows = items
+      .map(
+        (item, index) => `
+        <tr>
+          <td style="border:1px solid #ddd;padding:6px;text-align:center;">${index + 1}</td>
+          <td style="border:1px solid #ddd;padding:6px;">${item.material_description ?? "-"}</td>
+          <td style="border:1px solid #ddd;padding:6px;text-align:center;">${item.unit ?? "-"}</td>
+          <td style="border:1px solid #ddd;padding:6px;text-align:center;">${item.req_qty ?? "-"}</td>
+          <td style="border:1px solid #ddd;padding:6px;">${item.make ?? "-"}</td>
+          <td style="border:1px solid #ddd;padding:6px;">${item.place_of_utilisation ?? "-"}</td>
+        </tr>`
+      )
+      .join("");
+
+    const customMessage = message
+      ? `<p style="margin:12px 0;color:#333;">${message}</p>`
+      : `<p style="margin:12px 0;color:#333;">Please find the attached Purchase Requisition for your review and approval.</p>`;
+
+    const htmlBody = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family:Arial,sans-serif;color:#222;max-width:700px;margin:auto;padding:20px;">
+
+  <!-- Header -->
+  <div style="background:#1a1a2e;padding:20px;border-radius:8px 8px 0 0;text-align:center;">
+    <h1 style="color:#fff;margin:0;font-size:22px;">MADHURAM ENTERPRISES</h1>
+    <p style="color:#aabbee;margin:4px 0;font-size:12px;">PLUMBING & FIRE FIGHTING CONTRACTORS</p>
+  </div>
+
+  <!-- PR Title Band -->
+  <div style="background:#4a90d9;padding:10px;text-align:center;">
+    <h2 style="color:#fff;margin:0;font-size:16px;letter-spacing:2px;">PURCHASE REQUISITION</h2>
+  </div>
+
+  <!-- PR Details -->
+  <div style="background:#f5f7fa;padding:16px;border:1px solid #ddd;">
+    <table width="100%" cellspacing="0" cellpadding="0">
+      <tr>
+        <td width="50%">
+          <p style="margin:4px 0;font-size:13px;"><b>PR ID:</b> ${pr.pr_id}</p>
+          <p style="margin:4px 0;font-size:13px;"><b>Project:</b> ${pr.project_name || "-"}</p>
+          <p style="margin:4px 0;font-size:13px;"><b>Work Order No:</b> ${pr.workorder_no || "-"}</p>
+          <p style="margin:4px 0;font-size:13px;"><b>Location:</b> ${pr.location || "-"}</p>
+        </td>
+        <td width="50%">
+          <p style="margin:4px 0;font-size:13px;"><b>Date:</b> ${formatDate(pr.date)}</p>
+          <p style="margin:4px 0;font-size:13px;"><b>MIR No:</b> ${pr.mirno || "-"}</p>
+          <p style="margin:4px 0;font-size:13px;"><b>Urgency:</b> ${pr.urgency || "-"}</p>
+          <p style="margin:4px 0;font-size:13px;"><b>Approved By:</b> ${pr.approved_by || "-"}</p>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Custom message -->
+  <div style="padding:12px 16px;">
+    ${customMessage}
+  </div>
+
+  <!-- Items Table -->
+  <div style="padding:0 0 12px;">
+    <table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="background:#1a1a2e;color:#fff;">
+          <th style="border:1px solid #555;padding:8px;text-align:center;">Sr</th>
+          <th style="border:1px solid #555;padding:8px;">Material Description</th>
+          <th style="border:1px solid #555;padding:8px;text-align:center;">Unit</th>
+          <th style="border:1px solid #555;padding:8px;text-align:center;">Req. Qty</th>
+          <th style="border:1px solid #555;padding:8px;">Make</th>
+          <th style="border:1px solid #555;padding:8px;">Place of Utilisation</th>
+        </tr>
+      </thead>
+      <tbody>${itemRows}</tbody>
+    </table>
+  </div>
+
+  <!-- Footer -->
+  <div style="background:#1a1a2e;padding:14px;text-align:center;margin-top:20px;border-radius:0 0 8px 8px;">
+    <p style="color:#aabbee;margin:0;font-size:11px;">MADHURAM ENTERPRISES — Purchase Requisition</p>
+    <p style="color:#7788aa;margin:4px 0 0;font-size:10px;">This is a system-generated email. Please do not reply directly to this email.</p>
+  </div>
+
+</body>
+</html>`;
+
+    const emailSubject = `Purchase Requisition PR #${pr.pr_id} – ${pr.project_name || "Project"}`;
+
+    // 4. Build attachments list for nodemailer
+    //    Priority: user-supplied attachments array → fallback to pr_file_path on the PR record
+    const nodemailerAttachments = [];
+
+    if (Array.isArray(attachments) && attachments.length > 0) {
+      for (const att of attachments) {
+        if (!att.filePath) continue;
+        const absolutePath = path.join(__dirname, "../../", att.filePath);
+        if (fs.existsSync(absolutePath)) {
+          nodemailerAttachments.push({
+            filename:    att.originalName || path.basename(att.filePath),
+            path:        absolutePath,
+          });
+        } else {
+          console.warn(`Attachment not found on disk, skipping: ${absolutePath}`);
+        }
+      }
+    } else if (pr.pr_file_path) {
+      // fallback: attach the PR's own document if no explicit attachments provided
+      const absolutePath = path.join(__dirname, "../../", pr.pr_file_path);
+      if (fs.existsSync(absolutePath)) {
+        nodemailerAttachments.push({
+          filename: path.basename(pr.pr_file_path),
+          path:     absolutePath,
+        });
+      }
+    }
+
+    // 5. Send email
+    const mailOptions = {
+      from:        process.env.SMTP_FROM || process.env.SMTP_USER,
+      to:          to,
+      cc:          cc && cc.length > 0 ? cc.join(",") : undefined,
+      subject:     emailSubject,
+      html:        htmlBody,
+      attachments: nodemailerAttachments,
+    };
+
+    let emailStatus     = "sent";
+    let emailError      = null;
+    let nodemailerMsgId = null;
+
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      nodemailerMsgId = info.messageId;
+    } catch (sendErr) {
+      emailStatus = "failed";
+      emailError  = sendErr.message;
+      console.error("Nodemailer send error:", sendErr);
+    }
+
+    // 6. Save email log to DB (always — even on failure)
+    const attachmentPaths = nodemailerAttachments.map((a) => path.basename(a.path));
+    try {
+      await pool.query(
+        `INSERT INTO pr_email_logs (
+          pr_id, sent_to, cc_addresses, subject, custom_message,
+          attachment_names, status, error_message, nodemailer_msg_id,
+          sent_by_user_id, sent_by_name
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [
+          id,
+          to,
+          cc && cc.length > 0 ? cc : null,
+          emailSubject,
+          message || null,
+          attachmentPaths.length > 0 ? attachmentPaths : null,
+          emailStatus,
+          emailError,
+          nodemailerMsgId,
+          user_id   || null,
+          user_name || null,
+        ]
+      );
+    } catch (dbErr) {
+      console.error("Warning: could not save email log to DB:", dbErr.message);
+    }
+
+    // 7. Activity log
+    logActivity({
+      action:            emailStatus === "sent" ? "email_sent" : "email_failed",
+      entity_type:       "pr",
+      entity_id:         id,
+      entity_name:       `PR #${pr.pr_id}`,
+      performed_by:      user_id   || null,
+      performed_by_name: user_name || null,
+      meta: { to, cc, nodemailerMsgId, status: emailStatus, attachments: attachmentPaths },
+    });
+
+    // 8. Respond
+    if (emailStatus === "failed") {
+      return res.status(500).json({
+        error:   "Email sending failed. Details saved to log.",
+        details: emailError,
+      });
+    }
+
+    return res.status(200).json({
+      message:     "Email sent successfully",
+      messageId:   nodemailerMsgId,
+      to,
+      cc:          cc || [],
+      attachments: attachmentPaths,
+      log_saved:   true,
+    });
+
+  } catch (error) {
+    console.error("Error in PR send-email route:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE: Get email logs for a PR
+// GET /api/pr/:id/email-logs
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /api/pr/{id}/email-logs:
+ *   get:
+ *     summary: Get all email send history for a PR
+ *     tags: [PR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: PR ID
+ *     responses:
+ *       200:
+ *         description: List of email logs
+ *       500:
+ *         description: Internal server error
+ */
+router.get("/:id/email-logs", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query(
+      `SELECT
+         log_id, pr_id, sent_to, cc_addresses, subject,
+         custom_message, attachment_names, status, error_message,
+         nodemailer_msg_id, sent_by_user_id, sent_by_name, sent_at
+       FROM pr_email_logs
+       WHERE pr_id = $1
+       ORDER BY sent_at DESC`,
+      [id]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching PR email logs:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+module.exports = router;
