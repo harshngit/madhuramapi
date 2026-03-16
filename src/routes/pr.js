@@ -911,7 +911,7 @@ router.post(
 //       "originalName" : "quotation.pdf"
 //     }
 //   ],
-//   "user_id"     : 1,                             // optional — for activity log
+//   "user_id"     : "431534af-f94a-424d-bfad-157db4516ad1",  // optional — UUID string
 //   "user_name"   : "Admin"                        // optional — for activity log
 // }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -965,7 +965,8 @@ router.post(
  *                       type: string
  *                       example: quotation.pdf
  *               user_id:
- *                 type: integer
+ *                 type: string
+ *                 description: User UUID
  *               user_name:
  *                 type: string
  *     responses:
@@ -1063,7 +1064,6 @@ router.post("/:id/send-email", async (req, res) => {
   <!-- Header -->
   <div style="background:#1a1a2e;padding:20px;border-radius:8px 8px 0 0;text-align:center;">
     <h1 style="color:#fff;margin:0;font-size:22px;">MADHURAM ENTERPRISES</h1>
-    <p style="color:#aabbee;margin:4px 0;font-size:12px;">PLUMBING & FIRE FIGHTING CONTRACTORS</p>
   </div>
 
   <!-- PR Title Band -->
