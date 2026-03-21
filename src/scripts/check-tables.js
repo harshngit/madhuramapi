@@ -9,7 +9,7 @@ require('dotenv').config();
     console.log('delivery_challans exists:', existsRes.rows[0].exists);
 
     const tablesRes = await pool.query(
-      "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('projects','pos','auth_users','boqs','mirs','itrs') ORDER BY table_name"
+      "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('projects','pos','auth_users','boqs','mirs','itrs','attendance') ORDER BY table_name"
     );
     console.log('tables present:', tablesRes.rows.map(x => x.table_name));
   } catch (e) {
