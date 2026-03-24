@@ -19,8 +19,6 @@ const { logActivity } = require("./dashboard"); // adjust path if needed
  *       properties:
  *         vendor_id:
  *           type: integer
- *         project_id:
- *           type: integer
  *         vendor_name:
  *           type: string
  *         vendor_company_name:
@@ -53,8 +51,6 @@ const { logActivity } = require("./dashboard"); // adjust path if needed
  *             type: object
  *             required: [vendor_name]
  *             properties:
- *               project_id:
- *                 type: integer
  *               vendor_name:
  *                 type: string
  *               vendor_company_name:
@@ -76,7 +72,6 @@ const { logActivity } = require("./dashboard"); // adjust path if needed
  */
 router.post("/", async (req, res) => {
   const {
-    project_id,
     vendor_name,
     vendor_company_name,
     vendor_email,
@@ -88,10 +83,9 @@ router.post("/", async (req, res) => {
   try {
     const result = await pool.query(
       `INSERT INTO vendors (
-        project_id, vendor_name, vendor_company_name, vendor_email, mobile_number, location, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        vendor_name, vendor_company_name, vendor_email, mobile_number, location, status
+      ) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
       [
-        project_id,
         vendor_name,
         vendor_company_name,
         vendor_email,
@@ -102,14 +96,14 @@ router.post("/", async (req, res) => {
     );
     res.status(201).json(result.rows[0]);
     logActivity({
-  action: "created",
-  entity_type: "vendor",
-  entity_id: result.rows[0].vendor_id,
-  entity_name: result.rows[0].vendor_name,
-  performed_by: req.body.created_by || null,
-  performed_by_name: req.body.created_by_name || null,
-  meta: { project_id: result.rows[0].project_id },
-});
+      action: "created",
+      entity_type: "vendor",
+      entity_id: result.rows[0].vendor_id,
+      entity_name: result.rows[0].vendor_name,
+      performed_by: req.body.created_by || null,
+      performed_by_name: req.body.created_by_name || null,
+      meta: {},
+    });
   } catch (error) {
     console.error("Error creating vendor:", error);
     res.status(500).json({ error: error.message });
@@ -134,35 +128,6 @@ router.get("/", async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error("Error fetching vendors:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * @swagger
- * /api/vendors/project/{projectId}:
- *   get:
- *     summary: Get all vendors for a specific project
- *     tags: [Vendors]
- *     parameters:
- *       - in: path
- *         name: projectId
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: List of vendors
- *       500:
- *         description: Internal server error
- */
-router.get("/project/:projectId", async (req, res) => {
-  const { projectId } = req.params;
-  try {
-    const result = await pool.query("SELECT * FROM vendors WHERE project_id = $1 ORDER BY created_at DESC", [projectId]);
-    res.json(result.rows);
-  } catch (error) {
-    console.error("Error fetching vendors by project:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -220,8 +185,6 @@ router.get("/:id", async (req, res) => {
  *           schema:
  *             type: object
  *             properties:
- *               project_id:
- *                 type: integer
  *               vendor_name:
  *                 type: string
  *               vendor_company_name:
@@ -246,7 +209,6 @@ router.get("/:id", async (req, res) => {
 router.put("/:id", async (req, res) => {
   const { id } = req.params;
   const {
-    project_id,
     vendor_name,
     vendor_company_name,
     vendor_email,
@@ -258,17 +220,15 @@ router.put("/:id", async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE vendors SET
-        project_id = COALESCE($1, project_id),
-        vendor_name = COALESCE($2, vendor_name),
-        vendor_company_name = COALESCE($3, vendor_company_name),
-        vendor_email = COALESCE($4, vendor_email),
-        mobile_number = COALESCE($5, mobile_number),
-        location = COALESCE($6, location),
-        status = COALESCE($7, status),
+        vendor_name = COALESCE($1, vendor_name),
+        vendor_company_name = COALESCE($2, vendor_company_name),
+        vendor_email = COALESCE($3, vendor_email),
+        mobile_number = COALESCE($4, mobile_number),
+        location = COALESCE($5, location),
+        status = COALESCE($6, status),
         updated_at = CURRENT_TIMESTAMP
-      WHERE vendor_id = $8 RETURNING *`,
+      WHERE vendor_id = $7 RETURNING *`,
       [
-        project_id,
         vendor_name,
         vendor_company_name,
         vendor_email,
@@ -292,7 +252,6 @@ router.put("/:id", async (req, res) => {
       entity_name: result.rows[0].vendor_name,
       performed_by: req.body.user_id || null,
       performed_by_name: req.body.user_name || null,
-      project_id: result.rows[0].project_id,
       meta: { updates: req.body }
     });
   } catch (error) {
@@ -359,7 +318,6 @@ router.patch("/:id/status", async (req, res) => {
       entity_name: result.rows[0].vendor_name,
       performed_by: req.body.user_id || null,
       performed_by_name: req.body.user_name || null,
-      project_id: result.rows[0].project_id,
       meta: { status_change: status }
     });
   } catch (error) {
@@ -397,13 +355,14 @@ router.delete("/:id", async (req, res) => {
     }
     res.json({ message: "Vendor deleted successfully" });
     logActivity({
-  action: "deleted",
-  entity_type: "vendor",
-  entity_id: id,
-  entity_name: result.rows[0].vendor_name,
-  performed_by: null,
-  performed_by_name: null,
-});
+      action: "deleted",
+      entity_type: "vendor",
+      entity_id: id,
+      entity_name: result.rows[0].vendor_name,
+      performed_by: req.query.user_id || null,
+      performed_by_name: req.query.user_name || null,
+      meta: {}
+    });
   } catch (error) {
     console.error("Error deleting vendor:", error);
     res.status(500).json({ error: error.message });

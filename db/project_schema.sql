@@ -32,7 +32,6 @@ END $$;
 
 CREATE TABLE IF NOT EXISTS vendors (
     vendor_id SERIAL PRIMARY KEY,
-    project_id INTEGER REFERENCES projects(project_id) ON DELETE CASCADE,
     vendor_name TEXT NOT NULL,
     vendor_company_name TEXT,
     vendor_email TEXT,
