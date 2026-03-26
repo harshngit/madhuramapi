@@ -55,6 +55,12 @@ const upload = multer({ storage: storage });
  *           type: string
  *         project_id:
  *           type: integer
+ *         user_id:
+ *           type: string
+ *           format: uuid
+ *         status:
+ *           type: string
+ *           enum: [pending, present, absent]
  *         created_at:
  *           type: string
  *           format: date-time
@@ -153,6 +159,9 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *                 type: string
  *               project_id:
  *                 type: integer
+ *               user_id:
+ *                 type: string
+ *                 format: uuid
  *     responses:
  *       201:
  *         description: Attendance record created
@@ -172,13 +181,14 @@ router.post("/", async (req, res) => {
       date,
       day,
       project_id,
+      user_id,
     } = req.body;
 
     const result = await pool.query(
       `INSERT INTO attendance (
         photo_selfie, photo_site, location, latitude, longitude,
-        user_name, phone_number, date, day, project_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+        user_name, phone_number, date, day, project_id, user_id, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending') RETURNING *`,
       [
         photo_selfie,
         photo_site,
@@ -190,6 +200,7 @@ router.post("/", async (req, res) => {
         date,
         day,
         project_id,
+        user_id,
       ]
     );
 
@@ -200,7 +211,7 @@ router.post("/", async (req, res) => {
       entity_type: "attendance",
       entity_id: result.rows[0].attendance_id,
       entity_name: `Attendance for ${user_name} on ${date}`,
-      performed_by: req.body.user_id || null,
+      performed_by: user_id || null,
       performed_by_name: user_name || null,
       meta: { project_id }
     });
@@ -269,6 +280,38 @@ router.get("/project/:project_id", async (req, res) => {
 
 /**
  * @swagger
+ * /api/attendance/user/{user_id}:
+ *   get:
+ *     summary: Get all attendance records for a specific user
+ *     tags: [Attendance]
+ *     parameters:
+ *       - in: path
+ *         name: user_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: User ID
+ *     responses:
+ *       200:
+ *         description: List of attendance records for the user
+ */
+router.get("/user/:user_id", async (req, res) => {
+  try {
+    const { user_id } = req.params;
+    const result = await pool.query(
+      "SELECT * FROM attendance WHERE user_id = $1 ORDER BY date DESC, created_at DESC",
+      [user_id]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Get user attendance error:", error);
+    res.status(500).json({ error: "Failed to fetch user attendance records" });
+  }
+});
+
+/**
+ * @swagger
  * /api/attendance/{id}:
  *   get:
  *     summary: Get an attendance record by ID
@@ -296,6 +339,76 @@ router.get("/:id", async (req, res) => {
   } catch (error) {
     console.error("Get attendance by ID error:", error);
     res.status(500).json({ error: "Failed to fetch attendance record" });
+  }
+});
+
+/**
+ * @swagger
+ * /api/attendance/{id}/status:
+ *   patch:
+ *     summary: Update attendance status (present/absent)
+ *     tags: [Attendance]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Attendance ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - status
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [present, absent]
+ *     responses:
+ *       200:
+ *         description: Status updated successfully
+ *       400:
+ *         description: Invalid status
+ *       404:
+ *         description: Record not found
+ *       500:
+ *         description: Server error
+ */
+router.patch("/:id/status", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!['present', 'absent'].includes(status)) {
+      return res.status(400).json({ error: "Status must be 'present' or 'absent'" });
+    }
+
+    const result = await pool.query(
+      `UPDATE attendance SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE attendance_id = $2 RETURNING *`,
+      [status, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Attendance record not found" });
+    }
+
+    res.json(result.rows[0]);
+
+    logActivity({
+      action: "updated_status",
+      entity_type: "attendance",
+      entity_id: id,
+      entity_name: `Status set to ${status} for attendance ${id}`,
+      performed_by: req.body.updated_by || null,
+      performed_by_name: req.body.updated_by_name || null,
+      meta: { status }
+    });
+  } catch (error) {
+    console.error("Update status error:", error);
+    res.status(500).json({ error: "Failed to update status" });
   }
 });
 
@@ -335,14 +448,16 @@ router.put("/:id", async (req, res) => {
       date,
       day,
       project_id,
+      user_id,
+      status,
     } = req.body;
 
     const result = await pool.query(
       `UPDATE attendance SET
         photo_selfie = $1, photo_site = $2, location = $3, latitude = $4, longitude = $5,
         user_name = $6, phone_number = $7, date = $8, day = $9, project_id = $10,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE attendance_id = $11 RETURNING *`,
+        user_id = $11, status = $12, updated_at = CURRENT_TIMESTAMP
+      WHERE attendance_id = $13 RETURNING *`,
       [
         photo_selfie,
         photo_site,
@@ -354,6 +469,8 @@ router.put("/:id", async (req, res) => {
         date,
         day,
         project_id,
+        user_id,
+        status,
         id,
       ]
     );
@@ -369,7 +486,7 @@ router.put("/:id", async (req, res) => {
       entity_type: "attendance",
       entity_id: id,
       entity_name: `Attendance for ${user_name} on ${date}`,
-      performed_by: req.body.user_id || null,
+      performed_by: user_id || null,
       performed_by_name: user_name || null,
       meta: { project_id }
     });

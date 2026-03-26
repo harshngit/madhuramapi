@@ -12,6 +12,9 @@ CREATE TABLE IF NOT EXISTS projects (
     samples TEXT[],
     mas_file TEXT,
     ml_management TEXT[],
+    flats INTEGER,
+    refuge_flat INTEGER,
+    toilets INTEGER,
     user_id UUID REFERENCES auth_users(user_id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -230,5 +233,19 @@ BEGIN
         ALTER TABLE mirs
         ADD CONSTRAINT mirs_po_id_fkey
         FOREIGN KEY (po_id) REFERENCES pos(po_id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
+-- Migration to add flats, refuge_flat, and toilets to projects table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'projects' AND column_name = 'flats') THEN
+        ALTER TABLE projects ADD COLUMN flats INTEGER;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'projects' AND column_name = 'refuge_flat') THEN
+        ALTER TABLE projects ADD COLUMN refuge_flat INTEGER;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'projects' AND column_name = 'toilets') THEN
+        ALTER TABLE projects ADD COLUMN toilets INTEGER;
     END IF;
 END $$;

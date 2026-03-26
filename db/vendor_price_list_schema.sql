@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS vendor_price_list_items (
     price_per_pic NUMERIC,
     discount_price NUMERIC,
     net_price NUMERIC,
+    quantity NUMERIC,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -60,5 +61,18 @@ BEGIN
         AND column_name = 'file_path'
     ) THEN
         ALTER TABLE vendor_price_lists ADD COLUMN file_path TEXT;
+    END IF;
+END $$;
+
+-- 5. Add quantity column to vendor_price_list_items if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 
+        FROM information_schema.columns 
+        WHERE table_name = 'vendor_price_list_items' 
+        AND column_name = 'quantity'
+    ) THEN
+        ALTER TABLE vendor_price_list_items ADD COLUMN quantity NUMERIC;
     END IF;
 END $$;

@@ -4,6 +4,7 @@ const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const nodemailer = require("nodemailer");
 const { generatePOPdf } = require("../utils/po_pdf");
 const { logActivity } = require("./dashboard"); // adjust path if needed
 
@@ -635,6 +636,249 @@ router.get("/:id/pdf", async (req, res) => {
 
   } catch (error) {
     console.error("Error generating PO PDF:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE: Upload email attachments for a PO
+// POST /api/po/:id/upload-email-attachment
+// ─────────────────────────────────────────────────────────────────────────────
+
+const emailAttachmentDir = path.join(__dirname, "../../uploads/po_email_attachments");
+if (!fs.existsSync(emailAttachmentDir)) {
+  fs.mkdirSync(emailAttachmentDir, { recursive: true });
+}
+
+const emailAttachmentStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, emailAttachmentDir),
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  },
+});
+
+const uploadEmailAttachment = multer({ storage: emailAttachmentStorage });
+
+/**
+ * @swagger
+ * /api/po/{id}/upload-email-attachment:
+ *   post:
+ *     summary: Upload one or more attachments to be sent with the PO email
+ *     tags: [PO]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: PO ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               files:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *     responses:
+ *       200:
+ *         description: Files uploaded successfully
+ */
+router.post(
+  "/:id/upload-email-attachment",
+  uploadEmailAttachment.array("files", 10),
+  async (req, res) => {
+    const { id } = req.params;
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "No files uploaded." });
+    }
+    try {
+      const attachments = [];
+      for (const file of req.files) {
+        const filePath = `/uploads/po_email_attachments/${file.filename}`;
+        await pool.query(
+          `INSERT INTO po_email_attachments
+             (po_id, file_path, original_name, mime_type, size_bytes, uploaded_by_user_id, uploaded_by_name)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [id, filePath, file.originalname, file.mimetype, file.size, req.body.user_id || null, req.body.user_name || null]
+        );
+        attachments.push({ filePath, originalName: file.originalname });
+      }
+      return res.status(200).json({ message: `${attachments.length} file(s) uploaded successfully.`, attachments });
+    } catch (error) {
+      console.error("Error saving email attachment record:", error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE: Send PO Email
+// POST /api/po/:id/send-email
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /api/po/{id}/send-email:
+ *   post:
+ *     summary: Send PO details via email
+ *     tags: [PO]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: PO ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [to]
+ *             properties:
+ *               to: { type: string }
+ *               cc: { type: array, items: { type: string } }
+ *               message: { type: string }
+ *               attachments:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     filePath: { type: string }
+ *                     originalName: { type: string }
+ *               user_id: { type: string }
+ *               user_name: { type: string }
+ *     responses:
+ *       200: { description: Email sent successfully }
+ */
+router.post("/:id/send-email", async (req, res) => {
+  const { id } = req.params;
+  const { to, cc, message, attachments, user_id, user_name } = req.body;
+
+  if (!to) return res.status(400).json({ error: "Recipient email is required." });
+
+  try {
+    const result = await pool.query("SELECT * FROM pos WHERE po_id = $1", [id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: "PO not found" });
+    const po = result.rows[0];
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_SECURE === "true",
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    });
+
+    // Simple HTML body for PO
+    const htmlBody = `
+      <h1>Purchase Order PO #${po.order_no || id}</h1>
+      <p>${message || "Please find the attached Purchase Order."}</p>
+      <p><b>Vendor:</b> ${po.vendor_name}</p>
+      <p><b>Total Amount:</b> ${po.total_amount}</p>
+    `;
+
+    const nodemailerAttachments = [];
+    if (Array.isArray(attachments)) {
+      for (const att of attachments) {
+        const absolutePath = path.join(__dirname, "../../", att.filePath);
+        if (fs.existsSync(absolutePath)) {
+          nodemailerAttachments.push({ filename: att.originalName, path: absolutePath });
+        }
+      }
+    }
+
+    const mailOptions = {
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to,
+      cc: cc?.join(","),
+      subject: `Purchase Order PO #${po.order_no || id}`,
+      html: htmlBody,
+      attachments: nodemailerAttachments,
+    };
+
+    let emailStatus = "sent";
+    let emailError = null;
+    let nodemailerMsgId = null;
+
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      nodemailerMsgId = info.messageId;
+    } catch (sendErr) {
+      emailStatus = "failed";
+      emailError = sendErr.message;
+    }
+
+    const attachmentPaths = nodemailerAttachments.map(a => path.basename(a.path));
+    await pool.query(
+      `INSERT INTO po_email_logs (
+        po_id, sent_to, cc_addresses, subject, custom_message,
+        attachment_names, status, error_message, nodemailer_msg_id,
+        sent_by_user_id, sent_by_name
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [id, to, cc, `Purchase Order PO #${po.order_no || id}`, message || null, attachmentPaths, emailStatus, emailError, nodemailerMsgId, user_id || null, user_name || null]
+    );
+
+    logActivity({
+      action: emailStatus === "sent" ? "email_sent" : "email_failed",
+      entity_type: "po",
+      entity_id: id,
+      entity_name: `PO #${po.order_no || id}`,
+      performed_by: user_id || null,
+      performed_by_name: user_name || null,
+      meta: { to, status: emailStatus },
+    });
+
+    return res.json({ message: "Email processed", status: emailStatus });
+  } catch (error) {
+    console.error("Error sending PO email:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE: Get email logs for a PO
+// GET /api/po/:id/email-logs
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /api/po/{id}/email-logs:
+ *   get:
+ *     summary: Get all email send history for a PO (optionally filtered by user)
+ *     tags: [PO]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: user_id
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of logs }
+ */
+router.get("/:id/email-logs", async (req, res) => {
+  const { id } = req.params;
+  const { user_id } = req.query;
+  try {
+    let query = "SELECT * FROM po_email_logs WHERE po_id = $1";
+    const params = [id];
+    if (user_id) {
+      query += " AND sent_by_user_id = $2";
+      params.push(user_id);
+    }
+    query += " ORDER BY sent_at DESC";
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching PO logs:", error);
     res.status(500).json({ error: error.message });
   }
 });

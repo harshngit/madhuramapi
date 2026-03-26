@@ -97,6 +97,12 @@ const uploadMiddleware = (req, res, next) => {
  *           type: array
  *           items:
  *             type: string
+ *         flats:
+ *           type: integer
+ *         refuge_flat:
+ *           type: integer
+ *         toilets:
+ *           type: integer
  *         user_id:
  *           type: string
  *           format: uuid
@@ -159,6 +165,12 @@ const uploadMiddleware = (req, res, next) => {
  *                 type: array
  *                 items:
  *                   type: string
+ *               flats:
+ *                 type: integer
+ *               refuge_flat:
+ *                 type: integer
+ *               toilets:
+ *                 type: integer
  *               user_id:
  *                 type: string
  *                 format: uuid
@@ -185,6 +197,9 @@ router.post("/", uploadMiddleware, async (req, res) => {
       pr_po_tracking,
       samples,
       ml_management,
+      flats,
+      refuge_flat,
+      toilets,
       user_id,
     } = req.body;
 
@@ -224,8 +239,8 @@ router.post("/", uploadMiddleware, async (req, res) => {
     const result = await pool.query(
       `INSERT INTO projects (
         project_name, project_startdate, client_name, location, floor, estimate_value, wo_number,
-        work_order_file, pr_po_tracking, samples, mas_file, ml_management, user_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
+        work_order_file, pr_po_tracking, samples, mas_file, ml_management, flats, refuge_flat, toilets, user_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING *`,
       [
         project_name,
         project_startdate,
@@ -239,6 +254,9 @@ router.post("/", uploadMiddleware, async (req, res) => {
         samplesArr || [],
         mas_file,
         mlManagementArr || [],
+        flats || null,
+        refuge_flat || null,
+        toilets || null,
         userIdValue,
       ]
     );

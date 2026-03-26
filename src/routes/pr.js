@@ -1245,7 +1245,7 @@ router.post("/:id/send-email", async (req, res) => {
  * @swagger
  * /api/pr/{id}/email-logs:
  *   get:
- *     summary: Get all email send history for a PR
+ *     summary: Get all email send history for a PR (optionally filtered by user)
  *     tags: [PR]
  *     parameters:
  *       - in: path
@@ -1254,6 +1254,12 @@ router.post("/:id/send-email", async (req, res) => {
  *         schema:
  *           type: integer
  *         description: PR ID
+ *       - in: query
+ *         name: user_id
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter logs by user ID
  *     responses:
  *       200:
  *         description: List of email logs
@@ -1262,17 +1268,26 @@ router.post("/:id/send-email", async (req, res) => {
  */
 router.get("/:id/email-logs", async (req, res) => {
   const { id } = req.params;
+  const { user_id } = req.query;
   try {
-    const result = await pool.query(
-      `SELECT
-         log_id, pr_id, sent_to, cc_addresses, subject,
-         custom_message, attachment_names, status, error_message,
-         nodemailer_msg_id, sent_by_user_id, sent_by_name, sent_at
-       FROM pr_email_logs
-       WHERE pr_id = $1
-       ORDER BY sent_at DESC`,
-      [id]
-    );
+    let query = `
+      SELECT
+        log_id, pr_id, sent_to, cc_addresses, subject,
+        custom_message, attachment_names, status, error_message,
+        nodemailer_msg_id, sent_by_user_id, sent_by_name, sent_at
+      FROM pr_email_logs
+      WHERE pr_id = $1
+    `;
+    const params = [id];
+
+    if (user_id) {
+      query += ` AND sent_by_user_id = $2`;
+      params.push(user_id);
+    }
+
+    query += ` ORDER BY sent_at DESC`;
+
+    const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (error) {
     console.error("Error fetching PR email logs:", error);

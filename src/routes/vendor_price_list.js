@@ -526,11 +526,12 @@ async function bulkInsertItems(client, priceListId, items) {
         item.SIZE_MM || item.size_mm || null,
         item['price_per-pic'] || item.price_per_pic || null,
         item.discountprice || item.discount_price || null,
-        item.net_price || null
+        item.net_price || null,
+        item.quantity || 0
       );
 
       const rowPlaceholders = [];
-      for (let j = 0; j < 11; j++) {
+      for (let j = 0; j < 12; j++) {
         rowPlaceholders.push(`$${paramIndex++}`);
       }
       placeholders.push(`(${rowPlaceholders.join(', ')})`);
@@ -539,7 +540,7 @@ async function bulkInsertItems(client, priceListId, items) {
     const insertQuery = `
       INSERT INTO vendor_price_list_items (
         price_list_id, items_name, hsn_code, item_code, category, product_name,
-        size_inch, size_mm, price_per_pic, discount_price, net_price
+        size_inch, size_mm, price_per_pic, discount_price, net_price, quantity
       ) VALUES ${placeholders.join(', ')}
     `;
 
@@ -595,6 +596,8 @@ async function bulkInsertItems(client, priceListId, items) {
  *                     discountprice:
  *                       type: number
  *                     net_price:
+ *                       type: number
+ *                     quantity:
  *                       type: number
  *     responses:
  *       201:

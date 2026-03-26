@@ -496,6 +496,36 @@ router.get("/users/:id", async (req, res) => {
 
 /**
  * @swagger
+ * /api/auth/labours:
+ *   get:
+ *     summary: Get all users with the role 'labour'
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: List of labour users
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/User'
+ *       500:
+ *         description: Server error
+ */
+router.get("/labours", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT user_id, name, email, phone_number, role, project_list FROM auth_users WHERE role = 'labour' ORDER BY name ASC"
+    );
+    return res.json(result.rows);
+  } catch (error) {
+    console.error("Get labours error:", error);
+    return res.status(500).json({ error: "failed to fetch labour users" });
+  }
+});
+
+/**
+ * @swagger
  * /api/auth/users/{id}:
  *   put:
  *     summary: Update a user
