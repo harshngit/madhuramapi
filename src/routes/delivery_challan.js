@@ -6,6 +6,8 @@ const path = require("path");
 const { logActivity } = require("./dashboard");
 const fs = require("fs");
 const { recordMovement } = require("./inventory"); // ← new import
+const { stampInventoryChain } = require("./inventory_trace");
+
 
 // Ensure upload directory exists
 const uploadDir = path.join(__dirname, "../../uploads/dc");
@@ -81,7 +83,7 @@ async function syncDCToInventory(client, {
       );
       inventory_id = ins.rows[0].inventory_id;
     }
-
+await stampInventoryChain(client, inventory_id, dc_id);
     // Record the stock-in movement
     await recordMovement(client, {
       inventory_id,

@@ -25,6 +25,7 @@ const prRoutes = require("./routes/pr");
 const attendanceRoutes = require("./routes/attendance");
 const quotationRoutes = require("./routes/quotation");
 const bulkInventoryRoutes = require("./routes/vendor_price_list_bulk_inventory");
+const traceRoutes = require("./routes/inventory_trace");
 
 
 // ✅ NEW: Dashboard + Activity + WebSocket
@@ -69,6 +70,7 @@ app.use("/api/pr", prRoutes);
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/quotations", quotationRoutes);
 app.use("/api/vendor-price-list", bulkInventoryRoutes);
+app.use("/api/inventory-trace", traceRoutes);
 
 // ✅ NEW: Dashboard routes
 app.use("/api/dashboard", dashboardRouter);
