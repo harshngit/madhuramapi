@@ -94,6 +94,14 @@ const ALLOWED_ROLES = new Set(["admin", "operational_manager", "po_officer", "la
  *                 type: array
  *                 items:
  *                   type: string
+ *               check_in_time:
+ *                 type: string
+ *                 format: time
+ *                 example: "09:00:00"
+ *               check_out_time:
+ *                 type: string
+ *                 format: time
+ *                 example: "18:00:00"
  *     responses:
  *       201:
  *         description: User created successfully
@@ -125,6 +133,8 @@ function sanitizeUser(row) {
     phone_number: row.phone_number,
     role: row.role,
     project_list: row.project_list || [],
+    check_in_time: row.check_in_time,
+    check_out_time: row.check_out_time,
   };
 }
 
@@ -150,6 +160,8 @@ router.post("/signup", async (req, res) => {
       project,
       project_list,
       role,
+      check_in_time,
+      check_out_time,
     } = req.body;
     const usernameValue = username ?? name;
 
@@ -213,10 +225,19 @@ router.post("/signup", async (req, res) => {
     }
 
     const insert = await pool.query(
-      `INSERT INTO auth_users (name, email, phone_number, password_hash, role, project_list)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING user_id, name, email, phone_number, role, project_list`,
-      [String(usernameValue).trim(), normalizedEmail, normalizedPhone, passwordHash, roleValue, projects]
+      `INSERT INTO auth_users (name, email, phone_number, password_hash, role, project_list, check_in_time, check_out_time)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING user_id, name, email, phone_number, role, project_list, check_in_time, check_out_time`,
+      [
+        String(usernameValue).trim(),
+        normalizedEmail,
+        normalizedPhone,
+        passwordHash,
+        roleValue,
+        projects,
+        check_in_time || null,
+        check_out_time || null,
+      ]
     );
 
     const user = sanitizeUser(insert.rows[0]);
@@ -556,6 +577,12 @@ router.get("/labours", async (req, res) => {
  *                 type: array
  *                 items:
  *                   type: string
+ *               check_in_time:
+ *                 type: string
+ *                 format: time
+ *               check_out_time:
+ *                 type: string
+ *                 format: time
  *     responses:
  *       200:
  *         description: User updated successfully
@@ -573,7 +600,7 @@ router.get("/labours", async (req, res) => {
 router.put("/users/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { username, email, phone_number, role, project, project_list } = req.body;
+    const { username, email, phone_number, role, project, project_list, check_in_time, check_out_time } = req.body;
 
     if (!username || !email || !role) {
       return res.status(400).json({ error: "username, email and role are required" });
@@ -583,10 +610,11 @@ router.put("/users/:id", async (req, res) => {
 
     const result = await pool.query(
       `UPDATE auth_users 
-       SET name = $1, email = $2, phone_number = $3, role = $4, project_list = $5 
-       WHERE user_id = $6 
-       RETURNING user_id, name, email, phone_number, role, project_list`,
-      [username, email, phone_number, role, projects, id]
+       SET name = $1, email = $2, phone_number = $3, role = $4, project_list = $5, 
+           check_in_time = $6, check_out_time = $7 
+       WHERE user_id = $8 
+       RETURNING user_id, name, email, phone_number, role, project_list, check_in_time, check_out_time`,
+      [username, email, phone_number, role, projects, check_in_time || null, check_out_time || null, id]
     );
 
     if (result.rowCount === 0) {

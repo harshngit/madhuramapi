@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS auth_users (
   role TEXT NOT NULL CHECK (role IN ('admin', 'operational_manager', 'po_officer', 'labour')),
   project_id INTEGER,
   project_list TEXT[] NOT NULL DEFAULT '{}'::text[],
+  check_in_time TIME,
+  check_out_time TIME,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

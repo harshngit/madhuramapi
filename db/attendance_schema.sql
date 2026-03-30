@@ -14,6 +14,13 @@ CREATE TABLE IF NOT EXISTS attendance (
     project_id INTEGER REFERENCES projects(project_id) ON DELETE CASCADE,
     user_id UUID REFERENCES auth_users(user_id) ON DELETE CASCADE,
     status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'present', 'absent')),
+    check_out_time TIMESTAMP,
+    check_out_photo_selfie TEXT,
+    check_out_photo_site TEXT,
+    check_out_location TEXT,
+    check_out_latitude NUMERIC,
+    check_out_longitude NUMERIC,
+    remark TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

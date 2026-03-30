@@ -61,6 +61,21 @@ const upload = multer({ storage: storage });
  *         status:
  *           type: string
  *           enum: [pending, present, absent]
+ *         check_out_time:
+ *           type: string
+ *           format: date-time
+ *         check_out_photo_selfie:
+ *           type: string
+ *         check_out_photo_site:
+ *           type: string
+ *         check_out_location:
+ *           type: string
+ *         check_out_latitude:
+ *           type: number
+ *         check_out_longitude:
+ *           type: number
+ *         remark:
+ *           type: string
  *         created_at:
  *           type: string
  *           format: date-time
@@ -184,11 +199,36 @@ router.post("/", async (req, res) => {
       user_id,
     } = req.body;
 
+    // Fetch user's designated check-in time for lateness calculation
+    const userResult = await pool.query(
+      "SELECT check_in_time, role FROM auth_users WHERE user_id = $1",
+      [user_id]
+    );
+
+    let remark = null;
+    if (userResult.rows.length > 0 && userResult.rows[0].role === 'labour' && userResult.rows[0].check_in_time) {
+      const designatedCheckIn = userResult.rows[0].check_in_time;
+      const now = new Date();
+      
+      // Parse HH:MM:SS
+      const [desigH, desigM, desigS] = designatedCheckIn.split(':').map(Number);
+      const designatedDate = new Date(now);
+      designatedDate.setHours(desigH, desigM, desigS || 0, 0);
+
+      if (now > designatedDate) {
+        const diffMs = now - designatedDate;
+        const diffMins = Math.floor(diffMs / 60000);
+        if (diffMins > 0) {
+          remark = `User is late by ${diffMins} minutes`;
+        }
+      }
+    }
+
     const result = await pool.query(
       `INSERT INTO attendance (
         photo_selfie, photo_site, location, latitude, longitude,
-        user_name, phone_number, date, day, project_id, user_id, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending') RETURNING *`,
+        user_name, phone_number, date, day, project_id, user_id, status, remark
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending', $12) RETURNING *`,
       [
         photo_selfie,
         photo_site,
@@ -201,6 +241,7 @@ router.post("/", async (req, res) => {
         day,
         project_id,
         user_id,
+        remark,
       ]
     );
 
@@ -213,7 +254,7 @@ router.post("/", async (req, res) => {
       entity_name: `Attendance for ${user_name} on ${date}`,
       performed_by: user_id || null,
       performed_by_name: user_name || null,
-      meta: { project_id }
+      meta: { project_id, remark }
     });
   } catch (error) {
     console.error("Create attendance error:", error);
@@ -535,6 +576,113 @@ router.delete("/:id", async (req, res) => {
   } catch (error) {
     console.error("Delete attendance error:", error);
     res.status(500).json({ error: "Failed to delete attendance record" });
+  }
+});
+
+/**
+ * @swagger
+ * /api/attendance/checkout/{id}:
+ *   put:
+ *     summary: Check out an attendance record
+ *     tags: [Attendance]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Attendance ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               photo_selfie: { type: string }
+ *               photo_site: { type: string }
+ *               location: { type: string }
+ *               latitude: { type: number }
+ *               longitude: { type: number }
+ *               user_id: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Checked out successfully
+ */
+router.put("/checkout/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      photo_selfie,
+      photo_site,
+      location,
+      latitude,
+      longitude,
+      user_id
+    } = req.body;
+
+    // Fetch user's designated check-out time and current attendance record
+    const userResult = await pool.query(
+      "SELECT check_out_time, role FROM auth_users WHERE user_id = $1",
+      [user_id]
+    );
+
+    const attendanceResult = await pool.query(
+      "SELECT remark FROM attendance WHERE attendance_id = $1",
+      [id]
+    );
+
+    if (attendanceResult.rows.length === 0) {
+      return res.status(404).json({ error: "Attendance record not found" });
+    }
+
+    let remark = attendanceResult.rows[0].remark || "";
+    if (userResult.rows.length > 0 && userResult.rows[0].role === 'labour' && userResult.rows[0].check_out_time) {
+      const designatedCheckOut = userResult.rows[0].check_out_time;
+      const now = new Date();
+      
+      // Parse HH:MM:SS
+      const [desigH, desigM, desigS] = designatedCheckOut.split(':').map(Number);
+      const designatedDate = new Date(now);
+      designatedDate.setHours(desigH, desigM, desigS || 0, 0);
+
+      if (now < designatedDate) {
+        const diffMs = designatedDate - now;
+        const diffMins = Math.floor(diffMs / 60000);
+        if (diffMins > 0) {
+          const earlyRemark = `User checked out early by ${diffMins} minutes`;
+          remark = remark ? `${remark}. ${earlyRemark}` : earlyRemark;
+        }
+      }
+    }
+
+    const result = await pool.query(
+      `UPDATE attendance SET
+        check_out_time = CURRENT_TIMESTAMP,
+        check_out_photo_selfie = $1,
+        check_out_photo_site = $2,
+        check_out_location = $3,
+        check_out_latitude = $4,
+        check_out_longitude = $5,
+        remark = $6,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE attendance_id = $7 RETURNING *`,
+      [photo_selfie, photo_site, location, latitude, longitude, remark, id]
+    );
+
+    res.json(result.rows[0]);
+
+    logActivity({
+      action: "checked_out",
+      entity_type: "attendance",
+      entity_id: id,
+      entity_name: `Check-out for attendance ${id}`,
+      performed_by: user_id || null,
+      meta: { remark }
+    });
+  } catch (error) {
+    console.error("Checkout error:", error);
+    res.status(500).json({ error: "Failed to check out" });
   }
 });
 
