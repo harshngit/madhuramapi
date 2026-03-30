@@ -23,6 +23,8 @@ const vendorRoutes = require("./routes/vendor");
 const vendorPriceListRoutes = require("./routes/vendor_price_list");
 const prRoutes = require("./routes/pr");
 const attendanceRoutes = require("./routes/attendance");
+const quotationRoutes = require("./routes/quotation");
+
 
 // ✅ NEW: Dashboard + Activity + WebSocket
 const { router: dashboardRouter, wsHandler } = require("./routes/dashboard");
@@ -64,6 +66,7 @@ app.use("/api/vendors", vendorRoutes);
 app.use("/api/vendor-price-list", vendorPriceListRoutes);
 app.use("/api/pr", prRoutes);
 app.use("/api/attendance", attendanceRoutes);
+app.use("/api/quotations", quotationRoutes);
 
 // ✅ NEW: Dashboard routes
 app.use("/api/dashboard", dashboardRouter);
