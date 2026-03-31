@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { pool } = require("../db");
 const { logActivity } = require("./dashboard");
+const { logInventoryHistory } = require("./inventory_history"); // ← NEW
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPER: record a movement + update current_quantity on inventories
@@ -9,7 +10,7 @@ const { logActivity } = require("./dashboard");
 async function recordMovement(client, {
   inventory_id,
   movement_type,   // 'in' | 'out' | 'adjustment'
-  quantity,        // always positive; direction is movement_type
+  quantity,        // always positive; direction is set by movement_type
   source_type,     // 'dc' | 'po' | 'pr' | 'sample' | 'mir' | 'manual'
   source_id,
   source_ref,
@@ -19,10 +20,19 @@ async function recordMovement(client, {
   performed_by,
   performed_by_name,
 }) {
-  // Determine signed delta
   const delta = movement_type === "out" ? -Math.abs(quantity) : Math.abs(quantity);
 
-  // Update current_quantity and get new balance
+  // Get balance BEFORE update
+  const beforeRes = await client.query(
+    `SELECT current_quantity, name, brand, units FROM inventories WHERE inventory_id = $1`,
+    [inventory_id]
+  );
+  const balance_before = Number(beforeRes.rows[0]?.current_quantity ?? 0);
+  const item_name      = beforeRes.rows[0]?.name  || null;
+  const item_brand     = beforeRes.rows[0]?.brand || null;
+  const item_units     = beforeRes.rows[0]?.units || null;
+
+  // Update current_quantity
   const updRes = await client.query(
     `UPDATE inventories
         SET current_quantity = COALESCE(current_quantity, 0) + $1,
@@ -31,10 +41,9 @@ async function recordMovement(client, {
       RETURNING current_quantity`,
     [delta, inventory_id]
   );
+  const balance_after = Number(updRes.rows[0]?.current_quantity ?? 0);
 
-  const balance_after = updRes.rows[0]?.current_quantity ?? 0;
-
-  // Insert movement record
+  // Insert into inventory_movements (existing table)
   await client.query(
     `INSERT INTO inventory_movements
        (inventory_id, movement_type, quantity, balance_after,
@@ -45,10 +54,31 @@ async function recordMovement(client, {
     [
       inventory_id, movement_type, Math.abs(quantity), balance_after,
       source_type || null, source_id || null, source_ref || null,
-      project_id || null, project_name || null, notes || null,
+      project_id  || null, project_name || null, notes || null,
       performed_by || null, performed_by_name || null,
     ]
   );
+
+  // ── NEW: also log into inventory_history ──────────────────────────────────
+  await logInventoryHistory(client, {
+    inventory_id,
+    item_name,
+    item_brand,
+    item_units,
+    change_type:   movement_type === "in" ? "stock_in" : movement_type === "out" ? "stock_out" : "adjustment",
+    stock_in:      movement_type === "in"  ? Math.abs(quantity) : 0,
+    stock_out:     movement_type === "out" ? Math.abs(quantity) : 0,
+    balance_before,
+    balance_after,
+    source_type:   source_type || "manual",
+    source_id,
+    source_ref,
+    project_id,
+    project_name,
+    notes,
+    performed_by,
+    performed_by_name,
+  });
 
   return balance_after;
 }
@@ -84,6 +114,8 @@ async function recordMovement(client, {
  *               source_pr_id: { type: integer }
  *               source_sample_id: { type: integer }
  *               notes:        { type: string }
+ *               user_id:      { type: string }
+ *               user_name:    { type: string }
  *     responses:
  *       201:
  *         description: Inventory item created
@@ -125,22 +157,46 @@ router.post("/", async (req, res) => {
 
     const item = result.rows[0];
 
-    // Record opening stock-in movement if quantity > 0
+    // Log creation event into inventory_history
+    await logInventoryHistory(client, {
+      inventory_id:      item.inventory_id,
+      item_name:         item.name,
+      item_brand:        item.brand,
+      item_units:        item.units,
+      change_type:       "created",
+      stock_in:          qty,
+      stock_out:         0,
+      balance_before:    0,
+      balance_after:     qty,
+      source_type:       source_dc_id ? "dc"
+                       : source_po_id ? "po"
+                       : source_pr_id ? "pr"
+                       : source_sample_id ? "sample"
+                       : "manual",
+      source_id:         source_dc_id || source_po_id || source_pr_id || source_sample_id || null,
+      project_id,
+      project_name,
+      notes:             notes || "New inventory item created",
+      performed_by:      user_id,
+      performed_by_name: user_name,
+    });
+
+    // If opening stock > 0, also record an inventory_movements row
     if (qty > 0) {
       await recordMovement(client, {
-        inventory_id: item.inventory_id,
-        movement_type: "in",
-        quantity: qty,
-        source_type: source_dc_id ? "dc"
-                   : source_po_id ? "po"
-                   : source_pr_id ? "pr"
-                   : source_sample_id ? "sample"
-                   : "manual",
-        source_id: source_dc_id || source_po_id || source_pr_id || source_sample_id || null,
-        source_ref: null,
-        project_id, project_name,
-        notes: notes || "Opening stock",
-        performed_by: user_id,
+        inventory_id:      item.inventory_id,
+        movement_type:     "in",
+        quantity:          qty,
+        source_type:       source_dc_id ? "dc"
+                         : source_po_id ? "po"
+                         : source_pr_id ? "pr"
+                         : source_sample_id ? "sample"
+                         : "manual",
+        source_id:         source_dc_id || source_po_id || source_pr_id || source_sample_id || null,
+        source_ref:        null,
+        project_id,        project_name,
+        notes:             notes || "Opening stock",
+        performed_by:      user_id,
         performed_by_name: user_name,
       });
     }
@@ -189,7 +245,7 @@ router.get("/", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/inventory/search?q=  – full-text / partial search
+// GET /api/inventory/search?q=
 // ─────────────────────────────────────────────────────────────────────────────
 /**
  * @swagger
@@ -202,27 +258,22 @@ router.get("/", async (req, res) => {
  *         name: q
  *         required: true
  *         schema: { type: string }
- *         description: Search keyword (name or brand)
  *     responses:
  *       200:
- *         description: Matching inventory items with movement summary
+ *         description: Matching inventory items
  */
 router.get("/search", async (req, res) => {
   try {
     const { q } = req.query;
-    if (!q || q.trim() === "") {
+    if (!q || q.trim() === "")
       return res.status(400).json({ error: "Query parameter 'q' is required" });
-    }
 
     const keyword = `%${q.trim()}%`;
-
     const result = await pool.query(
       `SELECT
          i.*,
-         -- last DC that stocked this item
          dc.challan_number   AS last_dc_challan,
          dc.challan_date     AS last_dc_date,
-         -- movement summary
          COALESCE(mv.total_in,  0) AS total_in,
          COALESCE(mv.total_out, 0) AS total_out,
          mv.movement_count
@@ -241,7 +292,6 @@ router.get("/search", async (req, res) => {
        ORDER BY i.updated_at DESC`,
       [keyword]
     );
-
     res.json(result.rows);
   } catch (err) {
     console.error("Error searching inventory:", err);
@@ -250,7 +300,7 @@ router.get("/search", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/inventory/:id  – single item
+// GET /api/inventory/:id
 // ─────────────────────────────────────────────────────────────────────────────
 /**
  * @swagger
@@ -286,13 +336,13 @@ router.get("/:id", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/inventory/:id/history  – full movement history for one item
+// GET /api/inventory/:id/history  – movement history for one item (existing)
 // ─────────────────────────────────────────────────────────────────────────────
 /**
  * @swagger
  * /api/inventory/{id}/history:
  *   get:
- *     summary: Get full movement history for an inventory item
+ *     summary: Get movement history for an inventory item
  *     tags: [Inventory]
  *     parameters:
  *       - in: path
@@ -302,7 +352,6 @@ router.get("/:id", async (req, res) => {
  *       - in: query
  *         name: source_type
  *         schema: { type: string, enum: [dc, po, pr, sample, mir, manual] }
- *         description: Filter by source type
  *       - in: query
  *         name: from
  *         schema: { type: string, format: date }
@@ -320,7 +369,6 @@ router.get("/:id/history", async (req, res) => {
     const { id } = req.params;
     const { source_type, from, to } = req.query;
 
-    // Verify item exists
     const itemRes = await pool.query(
       "SELECT * FROM inventories WHERE inventory_id = $1",
       [id]
@@ -329,37 +377,24 @@ router.get("/:id/history", async (req, res) => {
       return res.status(404).json({ error: "Inventory item not found" });
 
     const conditions = ["m.inventory_id = $1"];
-    const values = [id];
-    let idx = 2;
+    const values     = [id];
+    let   idx        = 2;
 
-    if (source_type) {
-      conditions.push(`m.source_type = $${idx++}`);
-      values.push(source_type);
-    }
-    if (from) {
-      conditions.push(`m.created_at >= $${idx++}`);
-      values.push(from);
-    }
-    if (to) {
-      conditions.push(`m.created_at <= $${idx++}`);
-      values.push(to + " 23:59:59");
-    }
+    if (source_type) { conditions.push(`m.source_type = $${idx++}`); values.push(source_type); }
+    if (from)        { conditions.push(`m.created_at >= $${idx++}`); values.push(from); }
+    if (to)          { conditions.push(`m.created_at <= $${idx++}`); values.push(to + " 23:59:59"); }
 
     const movRes = await pool.query(
       `SELECT
          m.*,
-         -- resolve DC details
-         dc.challan_number,  dc.challan_date,  dc.po_number AS dc_po_number,
-         -- resolve PO details
-         po.order_no         AS po_order_no,   po.vendor_name,
-         -- resolve PR details
-         pr.pr_number,       pr.location       AS pr_location,
-         -- resolve Sample details
-         s.building_name     AS sample_building
+         dc.challan_number, dc.challan_date, dc.po_number AS dc_po_number,
+         po.order_no AS po_order_no, po.vendor_name,
+         pr.pr_number, pr.location AS pr_location,
+         s.building_name AS sample_building
        FROM inventory_movements m
-       LEFT JOIN delivery_challans dc ON m.source_type = 'dc'  AND dc.dc_id     = m.source_id
-       LEFT JOIN pos              po  ON m.source_type = 'po'  AND po.po_id     = m.source_id
-       LEFT JOIN prs              pr  ON m.source_type = 'pr'  AND pr.pr_id     = m.source_id
+       LEFT JOIN delivery_challans dc ON m.source_type = 'dc'     AND dc.dc_id    = m.source_id
+       LEFT JOIN pos              po  ON m.source_type = 'po'     AND po.po_id    = m.source_id
+       LEFT JOIN prs              pr  ON m.source_type = 'pr'     AND pr.pr_id    = m.source_id
        LEFT JOIN samples          s   ON m.source_type = 'sample' AND s.sample_id = m.source_id
        WHERE ${conditions.join(" AND ")}
        ORDER BY m.created_at DESC`,
@@ -372,7 +407,7 @@ router.get("/:id/history", async (req, res) => {
       summary: {
         total_in:  movRes.rows.filter(r => r.movement_type === "in").reduce((a, r) => a + Number(r.quantity), 0),
         total_out: movRes.rows.filter(r => r.movement_type === "out").reduce((a, r) => a + Number(r.quantity), 0),
-        count: movRes.rows.length,
+        count:     movRes.rows.length,
       },
     });
   } catch (err) {
@@ -382,8 +417,7 @@ router.get("/:id/history", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/inventory/:id/background  – item "background" summary
-//    Returns the item + all source documents + full movement timeline
+// GET /api/inventory/:id/background
 // ─────────────────────────────────────────────────────────────────────────────
 /**
  * @swagger
@@ -391,9 +425,6 @@ router.get("/:id/history", async (req, res) => {
  *   get:
  *     summary: Full background/provenance of an inventory item
  *     tags: [Inventory]
- *     description: |
- *       Returns the item details plus all linked source documents
- *       (DC, PO, PR, Sample) and a complete movement timeline.
  *     parameters:
  *       - in: path
  *         name: id
@@ -408,7 +439,6 @@ router.get("/:id/history", async (req, res) => {
 router.get("/:id/background", async (req, res) => {
   try {
     const { id } = req.params;
-
     const itemRes = await pool.query(
       "SELECT * FROM inventories WHERE inventory_id = $1",
       [id]
@@ -418,7 +448,6 @@ router.get("/:id/background", async (req, res) => {
 
     const item = itemRes.rows[0];
 
-    // Fetch all linked source documents in parallel
     const [dcRes, poRes, prRes, sampleRes, movRes] = await Promise.all([
       item.source_dc_id
         ? pool.query("SELECT * FROM delivery_challans WHERE dc_id = $1", [item.source_dc_id])
@@ -461,8 +490,8 @@ router.get("/:id/background", async (req, res) => {
       },
       movements,
       summary: {
-        total_in:       movements.filter(r => r.movement_type === "in").reduce((a, r) => a + Number(r.quantity), 0),
-        total_out:      movements.filter(r => r.movement_type === "out").reduce((a, r) => a + Number(r.quantity), 0),
+        total_in:        movements.filter(r => r.movement_type === "in").reduce((a, r) => a + Number(r.quantity), 0),
+        total_out:       movements.filter(r => r.movement_type === "out").reduce((a, r) => a + Number(r.quantity), 0),
         current_balance: item.current_quantity,
         movement_count:  movements.length,
       },
@@ -503,6 +532,8 @@ router.get("/:id/background", async (req, res) => {
  *               project_id:    { type: integer }
  *               project_name:  { type: string }
  *               notes:         { type: string }
+ *               user_id:       { type: string }
+ *               user_name:     { type: string }
  *     responses:
  *       200:
  *         description: Movement recorded
@@ -537,13 +568,13 @@ router.post("/:id/movement", async (req, res) => {
     await client.query("BEGIN");
 
     const balance = await recordMovement(client, {
-      inventory_id: id,
+      inventory_id:      id,
       movement_type,
-      quantity: Number(quantity),
-      source_type: source_type || "manual",
+      quantity:          Number(quantity),
+      source_type:       source_type || "manual",
       source_id, source_ref,
       project_id, project_name, notes,
-      performed_by: user_id,
+      performed_by:      user_id,
       performed_by_name: user_name,
     });
 
@@ -552,13 +583,13 @@ router.post("/:id/movement", async (req, res) => {
     res.json({ message: "Movement recorded", new_balance: balance });
 
     logActivity({
-      action: movement_type === "in" ? "stock_in" : movement_type === "out" ? "stock_out" : "adjustment",
-      entity_type: "inventory",
-      entity_id: id,
-      entity_name: itemRes.rows[0].name,
-      performed_by: user_id || null,
-      performed_by_name: user_name || null,
-      meta: { quantity, source_type, source_ref },
+      action:              movement_type === "in" ? "stock_in" : movement_type === "out" ? "stock_out" : "adjustment",
+      entity_type:         "inventory",
+      entity_id:           id,
+      entity_name:         itemRes.rows[0].name,
+      performed_by:        user_id || null,
+      performed_by_name:   user_name || null,
+      meta:                { quantity, source_type, source_ref },
     });
   } catch (err) {
     await client.query("ROLLBACK");
@@ -570,13 +601,13 @@ router.post("/:id/movement", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PUT /api/inventory/:id
+// PUT /api/inventory/:id  – update metadata
 // ─────────────────────────────────────────────────────────────────────────────
 /**
  * @swagger
  * /api/inventory/{id}:
  *   put:
- *     summary: Update an inventory item (metadata only – use /movement for qty changes)
+ *     summary: Update an inventory item (metadata only — use /movement for qty)
  *     tags: [Inventory]
  *     parameters:
  *       - in: path
@@ -590,41 +621,84 @@ router.post("/:id/movement", async (req, res) => {
  *         description: Not found
  */
 router.put("/:id", async (req, res) => {
+  const client = await pool.connect();
   try {
     const { id } = req.params;
-    const { brand, name, price, stockin, billing, units, width, height } = req.body;
+    const { brand, name, price, stockin, billing, units, width, height, user_id, user_name } = req.body;
 
-    const result = await pool.query(
+    // Snapshot old values for change diff
+    const oldRes = await client.query(
+      "SELECT * FROM inventories WHERE inventory_id = $1",
+      [id]
+    );
+    if (oldRes.rows.length === 0)
+      return res.status(404).json({ error: "Inventory item not found" });
+
+    const old = oldRes.rows[0];
+
+    await client.query("BEGIN");
+
+    const result = await client.query(
       `UPDATE inventories SET
-         brand    = COALESCE($1, brand),
-         name     = COALESCE($2, name),
-         price    = COALESCE($3, price),
-         stockin  = COALESCE($4, stockin),
-         billing  = COALESCE($5, billing),
-         units    = COALESCE($6, units),
-         width    = COALESCE($7, width),
-         height   = COALESCE($8, height),
+         brand      = COALESCE($1, brand),
+         name       = COALESCE($2, name),
+         price      = COALESCE($3, price),
+         stockin    = COALESCE($4, stockin),
+         billing    = COALESCE($5, billing),
+         units      = COALESCE($6, units),
+         width      = COALESCE($7, width),
+         height     = COALESCE($8, height),
          updated_at = CURRENT_TIMESTAMP
        WHERE inventory_id = $9
        RETURNING *`,
       [brand, name, price, stockin, billing, units, width, height, id]
     );
 
-    if (result.rows.length === 0)
-      return res.status(404).json({ error: "Inventory item not found" });
+    const updated = result.rows[0];
 
-    res.json(result.rows[0]);
+    // Build a diff of what changed for the history log
+    const changed_fields = {};
+    const fields = ["brand", "name", "price", "stockin", "billing", "units", "width", "height"];
+    fields.forEach(f => {
+      if (req.body[f] !== undefined && req.body[f] !== old[f]) {
+        changed_fields[f] = { from: old[f], to: req.body[f] };
+      }
+    });
+
+    // Log to inventory_history
+    await logInventoryHistory(client, {
+      inventory_id:      id,
+      item_name:         updated.name,
+      item_brand:        updated.brand,
+      item_units:        updated.units,
+      change_type:       "updated",
+      stock_in:          0,
+      stock_out:         0,
+      balance_before:    Number(updated.current_quantity) || 0,
+      balance_after:     Number(updated.current_quantity) || 0,
+      source_type:       "manual",
+      notes:             "Metadata updated",
+      performed_by:      user_id  || null,
+      performed_by_name: user_name || null,
+      changed_fields:    Object.keys(changed_fields).length ? changed_fields : null,
+    });
+
+    await client.query("COMMIT");
+    res.json(updated);
 
     logActivity({
       action: "updated", entity_type: "inventory",
-      entity_id: id, entity_name: result.rows[0].name,
-      performed_by: req.body.user_id || null,
-      performed_by_name: req.body.user_name || null,
+      entity_id: id, entity_name: updated.name,
+      performed_by:      user_id || null,
+      performed_by_name: user_name || null,
       meta: { updates: req.body },
     });
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error("Error updating inventory item:", err);
     res.status(500).json({ error: "Internal Server Error" });
+  } finally {
+    client.release();
   }
 });
 
@@ -633,7 +707,7 @@ router.put("/:id", async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch("/:id/stockin", async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id }      = req.params;
     const { stockin } = req.body;
 
     if (typeof stockin !== "boolean")
@@ -658,32 +732,63 @@ router.patch("/:id/stockin", async (req, res) => {
 // DELETE /api/inventory/:id
 // ─────────────────────────────────────────────────────────────────────────────
 router.delete("/:id", async (req, res) => {
+  const client = await pool.connect();
   try {
-    const { id } = req.params;
-    const result = await pool.query(
-      "DELETE FROM inventories WHERE inventory_id=$1 RETURNING *",
+    const { id }                      = req.params;
+    const { user_id, user_name } = req.body || {};
+
+    const existing = await client.query(
+      "SELECT * FROM inventories WHERE inventory_id = $1",
       [id]
     );
-    if (result.rows.length === 0)
+    if (existing.rows.length === 0)
       return res.status(404).json({ error: "Inventory item not found" });
+
+    const item = existing.rows[0];
+
+    await client.query("BEGIN");
+
+    // Log deletion BEFORE the row is removed (CASCADE will wipe history entries)
+    await logInventoryHistory(client, {
+      inventory_id:      id,
+      item_name:         item.name,
+      item_brand:        item.brand,
+      item_units:        item.units,
+      change_type:       "deleted",
+      stock_in:          0,
+      stock_out:         Number(item.current_quantity) || 0,
+      balance_before:    Number(item.current_quantity) || 0,
+      balance_after:     0,
+      source_type:       "manual",
+      notes:             "Inventory item deleted",
+      performed_by:      user_id  || null,
+      performed_by_name: user_name || null,
+    });
+
+    await client.query("DELETE FROM inventories WHERE inventory_id = $1", [id]);
+
+    await client.query("COMMIT");
 
     res.json({ message: "Inventory item deleted successfully" });
 
     logActivity({
       action: "deleted", entity_type: "inventory",
-      entity_id: id, entity_name: result.rows[0].name,
-      performed_by: req.body.user_id || null,
-      performed_by_name: req.body.user_name || null,
+      entity_id: id, entity_name: item.name,
+      performed_by:      user_id  || null,
+      performed_by_name: user_name || null,
       meta: {},
     });
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error("Error deleting inventory item:", err);
     res.status(500).json({ error: "Internal Server Error" });
+  } finally {
+    client.release();
   }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Export helper so delivery_challan route can use it
+// Export
 // ─────────────────────────────────────────────────────────────────────────────
-module.exports = router;
+module.exports        = router;
 module.exports.recordMovement = recordMovement;

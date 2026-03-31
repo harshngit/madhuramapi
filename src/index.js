@@ -18,6 +18,7 @@ const poParserRoutes = require("./routes/po_parser");
 const poRoutes = require("./routes/po");
 const sampleRoutes = require("./routes/sample");
 const inventoryRoutes = require("./routes/inventory");
+const inventoryHistoryRoutes = require("./routes/inventory_history"); // ← NEW
 const deliveryChallanRoutes = require("./routes/delivery_challan");
 const vendorRoutes = require("./routes/vendor");
 const vendorPriceListRoutes = require("./routes/vendor_price_list");
@@ -27,8 +28,7 @@ const quotationRoutes = require("./routes/quotation");
 const bulkInventoryRoutes = require("./routes/vendor_price_list_bulk_inventory");
 const traceRoutes = require("./routes/inventory_trace");
 
-
-// ✅ NEW: Dashboard + Activity + WebSocket
+// Dashboard + Activity + WebSocket
 const { router: dashboardRouter, wsHandler } = require("./routes/dashboard");
 
 const app = express();
@@ -63,6 +63,7 @@ app.use("/api/itr", itrRoutes);
 app.use("/api/po", poRoutes);
 app.use("/api/sample", sampleRoutes);
 app.use("/api/inventory", inventoryRoutes);
+app.use("/api/inventory-history", inventoryHistoryRoutes); // ← NEW
 app.use("/api/dc", deliveryChallanRoutes);
 app.use("/api/vendors", vendorRoutes);
 app.use("/api/vendor-price-list", vendorPriceListRoutes);
@@ -72,7 +73,7 @@ app.use("/api/quotations", quotationRoutes);
 app.use("/api/vendor-price-list", bulkInventoryRoutes);
 app.use("/api/inventory-trace", traceRoutes);
 
-// ✅ NEW: Dashboard routes
+// Dashboard routes
 app.use("/api/dashboard", dashboardRouter);
 
 // 404
@@ -80,15 +81,15 @@ app.use((req, res) => {
   res.status(404).json({ error: "not found" });
 });
 
-// ─── Create HTTP server (needed for WebSocket to share same port) ─────────────
+// Create HTTP server (needed for WebSocket to share same port)
 const server = http.createServer(app);
 
-// ─── WebSocket server on /ws/activity ────────────────────────────────────────
+// WebSocket server on /ws/activity
 const wss = new WebSocketServer({ server, path: "/ws/activity" });
 wss.on("connection", wsHandler);
 console.log("WebSocket server ready at ws://localhost:<port>/ws/activity");
 
-// ─── Start ────────────────────────────────────────────────────────────────────
+// Start
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 server.listen(port, () => {
   console.log(`Server running on port ${port}`);
