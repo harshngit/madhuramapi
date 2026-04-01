@@ -225,8 +225,23 @@ router.post("/create-sample", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/sample  (unchanged)
+// GET /api/sample
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/sample:
+ *   get:
+ *     summary: Get all samples
+ *     tags: [Sample]
+ *     responses:
+ *       200:
+ *         description: List of all samples
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items: { type: object }
+ */
 router.get("/", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM samples ORDER BY created_at DESC");
@@ -238,8 +253,25 @@ router.get("/", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/sample/project/:projectId  (unchanged)
+// GET /api/sample/project/:projectId
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/sample/project/{projectId}:
+ *   get:
+ *     summary: Get all samples for a specific project
+ *     tags: [Sample]
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of samples for the project
+ *       500:
+ *         description: Server error
+ */
 router.get("/project/:projectId", async (req, res) => {
   try {
     const result = await pool.query(
@@ -254,8 +286,25 @@ router.get("/project/:projectId", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/sample/:id  (unchanged)
+// GET /api/sample/:id
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/sample/{id}:
+ *   get:
+ *     summary: Get a single sample by ID
+ *     tags: [Sample]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Sample details
+ *       404:
+ *         description: Sample not found
+ */
 router.get("/:id", async (req, res) => {
   try {
     const result = await pool.query(
@@ -400,6 +449,55 @@ router.delete("/:id", async (req, res) => {
     });
   } catch (error) {
     console.error("Error deleting sample:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/sample/project/:projectId
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/sample/project/{projectId}:
+ *   delete:
+ *     summary: Delete all samples associated with a project_id
+ *     tags: [Sample]
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Samples deleted successfully
+ *       500:
+ *         description: Server error
+ */
+router.delete("/project/:projectId", async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const result = await pool.query(
+      "DELETE FROM samples WHERE project_id = $1 RETURNING *",
+      [projectId]
+    );
+
+    res.json({
+      message: `${result.rowCount} samples deleted for project_id ${projectId}`,
+      deleted_count: result.rowCount
+    });
+
+    logActivity({
+      action: "deleted_all_by_project",
+      entity_type: "sample",
+      entity_id: projectId,
+      entity_name: `All samples for project #${projectId}`,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: projectId,
+      meta: { deleted_count: result.rowCount },
+    });
+  } catch (error) {
+    console.error("Error deleting samples by project:", error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });

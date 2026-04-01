@@ -4,6 +4,8 @@ const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const nodemailer = require("nodemailer");
+const { generateMIRPdf } = require("../utils/mir_pdf");
 const { logActivity } = require("./dashboard");
 const { recordMovement } = require("./inventory"); // ← stock-out helper
 
@@ -246,8 +248,18 @@ router.post("/", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/mir  (unchanged)
+// GET /api/mir
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/mir:
+ *   get:
+ *     summary: Get all MIRs
+ *     tags: [MIR]
+ *     responses:
+ *       200:
+ *         description: List of all MIRs
+ */
 router.get("/", async (req, res) => {
   try {
     res.json((await pool.query("SELECT * FROM mirs ORDER BY created_at DESC")).rows);
@@ -257,8 +269,23 @@ router.get("/", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/mir/project/:projectId  (unchanged)
+// GET /api/mir/project/:projectId
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/mir/project/{projectId}:
+ *   get:
+ *     summary: Get all MIRs for a specific project
+ *     tags: [MIR]
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of MIRs for the project
+ */
 router.get("/project/:projectId", async (req, res) => {
   try {
     const r = await pool.query(
@@ -272,8 +299,25 @@ router.get("/project/:projectId", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/mir/:id  (unchanged)
+// GET /api/mir/:id
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/mir/{id}:
+ *   get:
+ *     summary: Get a single MIR by ID
+ *     tags: [MIR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: MIR details
+ *       404:
+ *         description: MIR not found
+ */
 router.get("/:id", async (req, res) => {
   try {
     const r = await pool.query("SELECT * FROM mirs WHERE mir_id=$1", [req.params.id]);
@@ -431,3 +475,258 @@ router.delete("/:id", async (req, res) => {
 });
 
 module.exports = router;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE: Generate MIR PDF
+// GET /api/mir/:id/pdf
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/mir/{id}/pdf:
+ *   get:
+ *     summary: Generate and download a PDF for a MIR
+ *     tags: [MIR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: PDF file stream
+ *         content:
+ *           application/pdf:
+ *             schema: { type: string, format: binary }
+ *       404:
+ *         description: MIR not found
+ */
+router.get("/:id/pdf", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query("SELECT * FROM mirs WHERE mir_id = $1", [id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: "MIR not found" });
+    const mir = result.rows[0];
+
+    const pdfBuffer = await generateMIRPdf(mir);
+    const filename = `MIR_${mir.mir_refrence_no || id}_${Date.now()}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error("Error generating MIR PDF:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE: Upload email attachments for a MIR
+// POST /api/mir/:id/upload-email-attachment
+// ─────────────────────────────────────────────────────────────────────────────
+const emailAttachmentDir = path.join(__dirname, "../../uploads/mir_email_attachments");
+if (!fs.existsSync(emailAttachmentDir)) fs.mkdirSync(emailAttachmentDir, { recursive: true });
+
+const emailAttachmentStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, emailAttachmentDir),
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  },
+});
+const uploadEmailAttachment = multer({ storage: emailAttachmentStorage });
+
+/**
+ * @swagger
+ * /api/mir/{id}/upload-email-attachment:
+ *   post:
+ *     summary: Upload one or more attachments to be sent with the MIR email
+ *     tags: [MIR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               files:
+ *                 type: array
+ *                 items: { type: string, format: binary }
+ *     responses:
+ *       200: { description: Files uploaded successfully }
+ */
+router.post("/:id/upload-email-attachment", uploadEmailAttachment.array("files", 10), async (req, res) => {
+  const { id } = req.params;
+  if (!req.files || req.files.length === 0) return res.status(400).json({ error: "No files uploaded." });
+  try {
+    const attachments = [];
+    for (const file of req.files) {
+      const filePath = `/uploads/mir_email_attachments/${file.filename}`;
+      // Note: Assuming mir_email_attachments table exists, similar to pr_email_attachments
+      await pool.query(
+        `INSERT INTO mir_email_attachments
+           (mir_id, file_path, original_name, mime_type, size_bytes, uploaded_by_user_id, uploaded_by_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [id, filePath, file.originalname, file.mimetype, file.size, req.body.user_id || null, req.body.user_name || null]
+      );
+      attachments.push({ filePath, originalName: file.originalname });
+    }
+    return res.status(200).json({ message: `${attachments.length} file(s) uploaded successfully.`, attachments });
+  } catch (error) {
+    console.error("Error saving email attachment record:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE: Send MIR Email
+// POST /api/mir/:id/send-email
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/mir/{id}/send-email:
+ *   post:
+ *     summary: Send MIR details via email
+ *     tags: [MIR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [to]
+ *             properties:
+ *               to: { type: string }
+ *               cc: { type: array, items: { type: string } }
+ *               message: { type: string }
+ *               attachments:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     filePath: { type: string }
+ *                     originalName: { type: string }
+ *               user_id: { type: string }
+ *               user_name: { type: string }
+ *     responses:
+ *       200: { description: Email sent successfully }
+ */
+router.post("/:id/send-email", async (req, res) => {
+  const { id } = req.params;
+  const { to, cc, message, attachments, user_id, user_name } = req.body;
+  if (!to) return res.status(400).json({ error: "Recipient email is required." });
+
+  try {
+    const result = await pool.query("SELECT * FROM mirs WHERE mir_id = $1", [id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: "MIR not found" });
+    const mir = result.rows[0];
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_SECURE === "true",
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    });
+
+    const htmlBody = `
+      <h1>Material Inspection Report MIR #${mir.mir_refrence_no || id}</h1>
+      <p>${message || "Please find the attached Material Inspection Report."}</p>
+      <p><b>Project:</b> ${mir.project_name}</p>
+      <p><b>Inspection Date:</b> ${new Date(mir.inspection_date_time).toLocaleDateString("en-IN")}</p>
+    `;
+
+    const nodemailerAttachments = [];
+    if (Array.isArray(attachments)) {
+      for (const att of attachments) {
+        const absolutePath = path.join(__dirname, "../../", att.filePath);
+        if (fs.existsSync(absolutePath)) {
+          nodemailerAttachments.push({ filename: att.originalName, path: absolutePath });
+        }
+      }
+    }
+
+    const mailOptions = {
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to,
+      cc: cc?.join(","),
+      subject: `Material Inspection Report MIR #${mir.mir_refrence_no || id} - ${mir.project_name}`,
+      html: htmlBody,
+      attachments: nodemailerAttachments,
+    };
+
+    let emailStatus = "sent";
+    let emailError = null;
+    let nodemailerMsgId = null;
+
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      nodemailerMsgId = info.messageId;
+    } catch (sendErr) {
+      emailStatus = "failed";
+      emailError = sendErr.message;
+    }
+
+    const attachmentPaths = nodemailerAttachments.map(a => path.basename(a.path));
+    // Note: Assuming mir_email_logs table exists
+    await pool.query(
+      `INSERT INTO mir_email_logs (
+        mir_id, sent_to, cc_addresses, subject, custom_message,
+        attachment_names, status, error_message, nodemailer_msg_id,
+        sent_by_user_id, sent_by_name
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [id, to, cc, mailOptions.subject, message || null, attachmentPaths, emailStatus, emailError, nodemailerMsgId, user_id || null, user_name || null]
+    );
+
+    logActivity({
+      action: emailStatus === "sent" ? "email_sent" : "email_failed",
+      entity_type: "mir",
+      entity_id: id,
+      entity_name: `MIR #${mir.mir_refrence_no || id}`,
+      performed_by: user_id || null,
+      performed_by_name: user_name || null,
+      meta: { to, status: emailStatus },
+    });
+
+    return res.json({ message: "Email processed", status: emailStatus });
+  } catch (error) {
+    console.error("Error sending MIR email:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE: Get email logs for a MIR
+// GET /api/mir/:id/email-logs
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/mir/{id}/email-logs:
+ *   get:
+ *     summary: Get all email send history for a MIR
+ *     tags: [MIR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: List of logs }
+ */
+router.get("/:id/email-logs", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query("SELECT * FROM mir_email_logs WHERE mir_id = $1 ORDER BY sent_at DESC", [id]);
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching MIR email logs:", error);
+    res.status(500).json({ error: error.message });
+  }
+});

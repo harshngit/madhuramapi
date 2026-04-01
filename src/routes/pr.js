@@ -5,6 +5,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const nodemailer = require("nodemailer");
+const { generatePRPdf } = require("../utils/pr_pdf");
 const { logActivity } = require("./dashboard");
 const { recordMovement } = require("./inventory"); // ← stock-out helper
 
@@ -305,8 +306,23 @@ router.post("/", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET routes (unchanged logic, items now include inventory_id + balance)
+// GET /api/pr/project/:projectId
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/pr/project/{projectId}:
+ *   get:
+ *     summary: Get all PRs for a specific project
+ *     tags: [PR]
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of PRs for the project
+ */
 router.get("/project/:projectId", async (req, res) => {
   try {
     res.json(await getPrList("pr.project_id = $1", [req.params.projectId]));
@@ -315,6 +331,24 @@ router.get("/project/:projectId", async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/pr/sample/:sampleId
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/pr/sample/{sampleId}:
+ *   get:
+ *     summary: Get all PRs for a specific sample
+ *     tags: [PR]
+ *     parameters:
+ *       - in: path
+ *         name: sampleId
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of PRs for the sample
+ */
 router.get("/sample/:sampleId", async (req, res) => {
   try {
     res.json(await getPrList("pr.sample_id = $1", [req.params.sampleId]));
@@ -323,11 +357,57 @@ router.get("/sample/:sampleId", async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/pr/:id
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/pr/{id}:
+ *   get:
+ *     summary: Get a single PR by ID
+ *     tags: [PR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: PR details
+ *       404:
+ *         description: PR not found
+ */
 router.get("/:id", async (req, res) => {
   try {
     const rows = await getPrList("pr.pr_id = $1", [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ error: "PR not found" });
     res.json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/pr
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/pr:
+ *   get:
+ *     summary: Get all purchase requisitions
+ *     tags: [PR]
+ *     responses:
+ *       200:
+ *         description: List of all PRs
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items: { type: object }
+ */
+router.get("/", async (req, res) => {
+  try {
+    res.json(await getPrList("1=1", []));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -515,3 +595,256 @@ router.delete("/:id", async (req, res) => {
 });
 
 module.exports = router;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE: Generate PR PDF
+// GET /api/pr/:id/pdf
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/pr/{id}/pdf:
+ *   get:
+ *     summary: Generate and download a PDF for a PR
+ *     tags: [PR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: PDF file stream
+ *         content:
+ *           application/pdf:
+ *             schema: { type: string, format: binary }
+ *       404:
+ *         description: PR not found
+ */
+router.get("/:id/pdf", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const rows = await getPrList("pr.pr_id = $1", [id]);
+    if (rows.length === 0) return res.status(404).json({ error: "PR not found" });
+    const pr = rows[0];
+
+    const pdfBuffer = await generatePRPdf(pr);
+    const filename = `PR_${pr.pr_id}_${Date.now()}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error("Error generating PR PDF:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE: Upload email attachments for a PR
+// POST /api/pr/:id/upload-email-attachment
+// ─────────────────────────────────────────────────────────────────────────────
+const emailAttachmentDir = path.join(__dirname, "../../uploads/pr_email_attachments");
+if (!fs.existsSync(emailAttachmentDir)) fs.mkdirSync(emailAttachmentDir, { recursive: true });
+
+const emailAttachmentStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, emailAttachmentDir),
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  },
+});
+const uploadEmailAttachment = multer({ storage: emailAttachmentStorage });
+
+/**
+ * @swagger
+ * /api/pr/{id}/upload-email-attachment:
+ *   post:
+ *     summary: Upload one or more attachments to be sent with the PR email
+ *     tags: [PR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               files:
+ *                 type: array
+ *                 items: { type: string, format: binary }
+ *     responses:
+ *       200: { description: Files uploaded successfully }
+ */
+router.post("/:id/upload-email-attachment", uploadEmailAttachment.array("files", 10), async (req, res) => {
+  const { id } = req.params;
+  if (!req.files || req.files.length === 0) return res.status(400).json({ error: "No files uploaded." });
+  try {
+    const attachments = [];
+    for (const file of req.files) {
+      const filePath = `/uploads/pr_email_attachments/${file.filename}`;
+      await pool.query(
+        `INSERT INTO pr_email_attachments
+           (pr_id, file_path, original_name, mime_type, size_bytes, uploaded_by_user_id, uploaded_by_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [id, filePath, file.originalname, file.mimetype, file.size, req.body.user_id || null, req.body.user_name || null]
+      );
+      attachments.push({ filePath, originalName: file.originalname });
+    }
+    return res.status(200).json({ message: `${attachments.length} file(s) uploaded successfully.`, attachments });
+  } catch (error) {
+    console.error("Error saving email attachment record:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE: Send PR Email
+// POST /api/pr/:id/send-email
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/pr/{id}/send-email:
+ *   post:
+ *     summary: Send PR details via email
+ *     tags: [PR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [to]
+ *             properties:
+ *               to: { type: string }
+ *               cc: { type: array, items: { type: string } }
+ *               message: { type: string }
+ *               attachments:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     filePath: { type: string }
+ *                     originalName: { type: string }
+ *               user_id: { type: string }
+ *               user_name: { type: string }
+ *     responses:
+ *       200: { description: Email sent successfully }
+ */
+router.post("/:id/send-email", async (req, res) => {
+  const { id } = req.params;
+  const { to, cc, message, attachments, user_id, user_name } = req.body;
+  if (!to) return res.status(400).json({ error: "Recipient email is required." });
+
+  try {
+    const rows = await getPrList("pr.pr_id = $1", [id]);
+    if (rows.length === 0) return res.status(404).json({ error: "PR not found" });
+    const pr = rows[0];
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_SECURE === "true",
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    });
+
+    const htmlBody = `
+      <h1>Purchase Requisition PR #${pr.pr_id}</h1>
+      <p>${message || "Please find the attached Purchase Requisition."}</p>
+      <p><b>Project:</b> ${pr.project_name}</p>
+      <p><b>Date:</b> ${new Date(pr.date).toLocaleDateString("en-IN")}</p>
+    `;
+
+    const nodemailerAttachments = [];
+    if (Array.isArray(attachments)) {
+      for (const att of attachments) {
+        const absolutePath = path.join(__dirname, "../../", att.filePath);
+        if (fs.existsSync(absolutePath)) {
+          nodemailerAttachments.push({ filename: att.originalName, path: absolutePath });
+        }
+      }
+    }
+
+    const mailOptions = {
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to,
+      cc: cc?.join(","),
+      subject: `Purchase Requisition PR #${pr.pr_id} - ${pr.project_name}`,
+      html: htmlBody,
+      attachments: nodemailerAttachments,
+    };
+
+    let emailStatus = "sent";
+    let emailError = null;
+    let nodemailerMsgId = null;
+
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      nodemailerMsgId = info.messageId;
+    } catch (sendErr) {
+      emailStatus = "failed";
+      emailError = sendErr.message;
+    }
+
+    const attachmentPaths = nodemailerAttachments.map(a => path.basename(a.path));
+    await pool.query(
+      `INSERT INTO pr_email_logs (
+        pr_id, sent_to, cc_addresses, subject, custom_message,
+        attachment_names, status, error_message, nodemailer_msg_id,
+        sent_by_user_id, sent_by_name
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [id, to, cc, mailOptions.subject, message || null, attachmentPaths, emailStatus, emailError, nodemailerMsgId, user_id || null, user_name || null]
+    );
+
+    logActivity({
+      action: emailStatus === "sent" ? "email_sent" : "email_failed",
+      entity_type: "pr",
+      entity_id: id,
+      entity_name: `PR #${id}`,
+      performed_by: user_id || null,
+      performed_by_name: user_name || null,
+      meta: { to, status: emailStatus },
+    });
+
+    return res.json({ message: "Email processed", status: emailStatus });
+  } catch (error) {
+    console.error("Error sending PR email:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE: Get email logs for a PR
+// GET /api/pr/:id/email-logs
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/pr/{id}/email-logs:
+ *   get:
+ *     summary: Get all email send history for a PR
+ *     tags: [PR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: List of logs }
+ */
+router.get("/:id/email-logs", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query("SELECT * FROM pr_email_logs WHERE pr_id = $1 ORDER BY sent_at DESC", [id]);
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching PR email logs:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
