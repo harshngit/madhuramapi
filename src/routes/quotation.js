@@ -511,6 +511,14 @@ router.post("/", async (req, res) => {
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("Create quotation error:", err);
+
+    // Handle unique constraint violation for quotation_no
+    if (err.code === "23505") {
+      return res.status(400).json({
+        error: `Quotation number '${req.body.quotation_no}' already exists. Please use a unique number.`
+      });
+    }
+
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -888,6 +896,14 @@ router.put("/:id", async (req, res) => {
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("Update quotation error:", err);
+
+    // Handle unique constraint violation for quotation_no
+    if (err.code === "23505") {
+      return res.status(400).json({
+        error: `Quotation number '${req.body.quotation_no}' already exists. Please use a unique number.`
+      });
+    }
+
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
