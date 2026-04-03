@@ -257,7 +257,7 @@ router.post("/", async (req, res) => {
 
     // Insert items + run stock-outs for any that have inventory_id
     await insertItems(client, pr.pr_id, items, {
-      pr_ref:            pr.pr_number || `PR #${pr.pr_id}`,
+      pr_ref:            `PR #${pr.pr_id}`,
       project_id,
       project_name,
       performed_by:      req.body.user_id || null,
@@ -507,11 +507,11 @@ router.put("/:id", async (req, res) => {
 
       await client.query("DELETE FROM purchase_requisition_items WHERE pr_id=$1", [id]);
       await insertItems(client, id, items, {
-        pr_ref:            pr.pr_number || `PR #${id}`,
+        pr_ref:            `PR #${id}`,
         project_id:        pr.project_id,
         project_name:      pr.project_name,
-        performed_by:      req.body.user_id || null,
-        performed_by_name: req.body.user_name || null,
+        performed_by:      req.body.user_id,
+        performed_by_name: req.body.user_name,
       });
     }
 
@@ -520,10 +520,12 @@ router.put("/:id", async (req, res) => {
     res.json(rows[0]);
 
     logActivity({
-      action: "updated", entity_type: "pr",
-      entity_id: Number(id), entity_name: `PR #${id}`,
-      performed_by: req.body.user_id || null,
-      performed_by_name: req.body.user_name || null,
+      action: "updated",
+      entity_type: "pr",
+      entity_id: id,
+      entity_name: `PR #${id}`,
+      performed_by: req.body.user_id,
+      performed_by_name: req.body.user_name,
       project_id: pr.project_id,
       meta: {},
     });

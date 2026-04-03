@@ -64,8 +64,7 @@ async function resolveUpstreamChain(dcId) {
      FROM delivery_challans dc
      LEFT JOIN pos          po ON po.po_id    = dc.po_id
      LEFT JOIN samples      s  ON s.sample_id = po.sample_id
-     LEFT JOIN purchase_requisitions pr
-                               ON pr.sample_id = s.sample_id
+     LEFT JOIN purchase_requisitions pr ON pr.sample_id = s.sample_id
                               AND pr.project_id = COALESCE(po.project_id, dc.project_id)
      WHERE dc.dc_id = $1
      LIMIT 1`,

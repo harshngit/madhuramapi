@@ -441,7 +441,7 @@ router.get("/search-with-history", async (req, res) => {
                dc.challan_date     AS source_dc_date,
                po.order_no         AS source_po_order_no,
                po.vendor_name      AS source_po_vendor,
-               pr.pr_number        AS source_pr_number,
+               pr.pr_id            AS source_pr_number,
                s.building_name     AS source_sample_building,
                s.site_name         AS source_sample_site
              FROM inventories i
@@ -457,7 +457,7 @@ router.get("/search-with-history", async (req, res) => {
                dc.challan_date     AS source_dc_date,
                po.order_no         AS source_po_order_no,
                po.vendor_name      AS source_po_vendor,
-               pr.pr_number        AS source_pr_number,
+               pr.pr_id            AS source_pr_number,
                s.building_name     AS source_sample_building,
                s.site_name         AS source_sample_site
              FROM inventories i
@@ -529,7 +529,7 @@ router.get("/search-with-history", async (req, res) => {
              po.vendor_name        AS po_vendor_name,
              po.po_date            AS po_date,
 
-             pr.pr_number          AS pr_number,
+             pr.pr_id              AS pr_number,
              pr.location           AS pr_location,
              pr.project_name       AS pr_project_name,
 
@@ -559,7 +559,7 @@ router.get("/search-with-history", async (req, res) => {
              CASE
                WHEN h.source_type = 'dc'     THEN 'Received via DC: ' || COALESCE(dc.challan_number, '#' || h.source_id::text)
                WHEN h.source_type = 'po'     THEN 'From PO: '         || COALESCE(po.order_no,       '#' || h.source_id::text)
-               WHEN h.source_type = 'pr'     THEN 'Issued to PR: '    || COALESCE(pr.pr_number,      '#' || h.source_id::text)
+               WHEN h.source_type = 'pr'     THEN 'Issued to PR: '    || COALESCE(pr.pr_id::text,      '#' || h.source_id::text)
                WHEN h.source_type = 'sample' THEN 'Used in Sample: '  || COALESCE(s.building_name,   '#' || h.source_id::text)
                WHEN h.source_type = 'mir'    THEN 'MIR: '             || COALESCE(mir.mir_refrence_no,'#' || h.source_id::text)
                WHEN h.change_type = 'created'THEN 'Item created'
@@ -572,7 +572,7 @@ router.get("/search-with-history", async (req, res) => {
                   ON h.source_type = 'dc'     AND dc.dc_id      = h.source_id
            LEFT JOIN pos po
                   ON h.source_type = 'po'     AND po.po_id       = h.source_id
-           LEFT JOIN prs pr
+           LEFT JOIN purchase_requisitions pr
                   ON h.source_type = 'pr'     AND pr.pr_id       = h.source_id
            LEFT JOIN samples s
                   ON h.source_type = 'sample' AND s.sample_id    = h.source_id
@@ -676,7 +676,7 @@ router.get("/:id", async (req, res) => {
               dc.challan_date     AS source_dc_date,
               po.order_no         AS source_po_order_no,
               po.vendor_name      AS source_po_vendor,
-              pr.pr_number        AS source_pr_number,
+              pr.pr_id            AS source_pr_number,
               s.building_name     AS source_sample_building
          FROM inventories i
          LEFT JOIN delivery_challans dc ON dc.dc_id    = i.source_dc_id
@@ -697,13 +697,13 @@ router.get("/:id", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/inventory/:id/history
-// Movement history for one item — with resolved source document names
+// Complete history (stock movements + metadata changes) with resolved source names
 // ─────────────────────────────────────────────────────────────────────────────
 /**
  * @swagger
  * /api/inventory/{id}/history:
  *   get:
- *     summary: Get movement history for an inventory item (with source names resolved)
+ *     summary: Get complete history for an inventory item (stock movements + metadata changes)
  *     tags: [Inventory]
  *     parameters:
  *       - in: path
@@ -714,6 +714,9 @@ router.get("/:id", async (req, res) => {
  *         name: source_type
  *         schema: { type: string, enum: [dc, po, pr, sample, mir, manual] }
  *       - in: query
+ *         name: change_type
+ *         schema: { type: string, enum: [stock_in, stock_out, adjustment, created, updated, deleted] }
+ *       - in: query
  *         name: from
  *         schema: { type: string, format: date }
  *       - in: query
@@ -721,125 +724,15 @@ router.get("/:id", async (req, res) => {
  *         schema: { type: string, format: date }
  *     responses:
  *       200:
- *         description: Movement history with item details and resolved source names
+ *         description: Full history with resolved source document names
  *       404:
  *         description: Inventory item not found
  */
 router.get("/:id/history", async (req, res) => {
   try {
     const { id } = req.params;
-    const { source_type, from, to } = req.query;
+    const { source_type, change_type, from, to } = req.query;
 
-    const itemRes = await pool.query(
-      `SELECT i.*,
-              dc.challan_number   AS source_dc_challan,
-              po.order_no         AS source_po_order_no,
-              po.vendor_name      AS source_po_vendor,
-              pr.pr_number        AS source_pr_number,
-              s.building_name     AS source_sample_building
-         FROM inventories i
-         LEFT JOIN delivery_challans dc ON dc.dc_id    = i.source_dc_id
-         LEFT JOIN pos               po ON po.po_id    = i.source_po_id
-         LEFT JOIN prs               pr ON pr.pr_id    = i.source_pr_id
-         LEFT JOIN samples           s  ON s.sample_id = i.source_sample_id
-        WHERE i.inventory_id = $1`,
-      [id]
-    );
-    if (itemRes.rows.length === 0)
-      return res.status(404).json({ error: "Inventory item not found" });
-
-    const conditions = ["m.inventory_id = $1"];
-    const values     = [id];
-    let   idx        = 2;
-
-    if (source_type) { conditions.push(`m.source_type = $${idx++}`); values.push(source_type); }
-    if (from)        { conditions.push(`m.created_at >= $${idx++}`); values.push(from); }
-    if (to)          { conditions.push(`m.created_at <= $${idx++}`); values.push(to + " 23:59:59"); }
-
-    const movRes = await pool.query(
-      `SELECT
-         m.*,
-         -- DC
-         dc.challan_number     AS dc_challan_number,
-         dc.challan_date       AS dc_challan_date,
-         dc.po_number          AS dc_po_number,
-         -- PO
-         po.order_no           AS po_order_no,
-         po.vendor_name        AS po_vendor_name,
-         -- PR
-         pr.pr_number          AS pr_number,
-         pr.location           AS pr_location,
-         pr.project_name       AS pr_project_name,
-         -- PR item material name (what was issued)
-         (SELECT pri.material_description
-            FROM purchase_requisition_items pri
-           WHERE pri.pr_id = m.source_id
-             AND pri.inventory_id = m.inventory_id
-           LIMIT 1)            AS pr_item_material,
-         -- Sample
-         s.building_name       AS sample_building,
-         s.site_name           AS sample_site,
-         -- MIR
-         mir.mir_refrence_no   AS mir_ref_no,
-         -- Computed event label
-         CASE
-           WHEN m.source_type = 'dc'     THEN 'Received via DC: '  || COALESCE(dc.challan_number, '#' || m.source_id::text)
-           WHEN m.source_type = 'po'     THEN 'From PO: '           || COALESCE(po.order_no,       '#' || m.source_id::text)
-           WHEN m.source_type = 'pr'     THEN 'Issued to PR: '      || COALESCE(pr.pr_number,      '#' || m.source_id::text)
-           WHEN m.source_type = 'sample' THEN 'Used in Sample: '    || COALESCE(s.building_name,   '#' || m.source_id::text)
-           WHEN m.source_type = 'mir'    THEN 'MIR: '               || COALESCE(mir.mir_refrence_no,'#'|| m.source_id::text)
-           ELSE COALESCE(m.source_ref, 'Manual entry')
-         END AS event_label
-       FROM inventory_movements m
-       LEFT JOIN delivery_challans dc  ON m.source_type = 'dc'     AND dc.dc_id      = m.source_id
-       LEFT JOIN pos               po  ON m.source_type = 'po'     AND po.po_id       = m.source_id
-       LEFT JOIN prs               pr  ON m.source_type = 'pr'     AND pr.pr_id       = m.source_id
-       LEFT JOIN samples           s   ON m.source_type = 'sample' AND s.sample_id    = m.source_id
-       LEFT JOIN mirs              mir ON m.source_type = 'mir'    AND mir.mir_id     = m.source_id
-       WHERE ${conditions.join(" AND ")}
-       ORDER BY m.created_at DESC`,
-      values
-    );
-
-    res.json({
-      item:      itemRes.rows[0],
-      movements: movRes.rows,
-      summary: {
-        total_in:  movRes.rows.filter(r => r.movement_type === "in").reduce((a, r) => a + Number(r.quantity), 0),
-        total_out: movRes.rows.filter(r => r.movement_type === "out").reduce((a, r) => a + Number(r.quantity), 0),
-        count:     movRes.rows.length,
-      },
-    });
-  } catch (err) {
-    console.error("Error fetching inventory history:", err);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/inventory/:id/background
-// Full provenance — upstream chain + all movements
-// ─────────────────────────────────────────────────────────────────────────────
-/**
- * @swagger
- * /api/inventory/{id}/background:
- *   get:
- *     summary: Full background/provenance of an inventory item
- *     tags: [Inventory]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: integer }
- *     responses:
- *       200:
- *         description: Full item background
- *       404:
- *         description: Not found
- */
-router.get("/:id/background", async (req, res) => {
-  try {
-    const { id } = req.params;
     const itemRes = await pool.query(
       "SELECT * FROM inventories WHERE inventory_id = $1",
       [id]
@@ -847,70 +740,33 @@ router.get("/:id/background", async (req, res) => {
     if (itemRes.rows.length === 0)
       return res.status(404).json({ error: "Inventory item not found" });
 
-    const item = itemRes.rows[0];
+    const conditions = ["inventory_id = $1"];
+    const values     = [id];
+    let   idx        = 2;
 
-    const [dcRes, poRes, prRes, sampleRes, movRes] = await Promise.all([
-      item.source_dc_id
-        ? pool.query("SELECT * FROM delivery_challans WHERE dc_id = $1", [item.source_dc_id])
-        : { rows: [] },
-      item.source_po_id
-        ? pool.query("SELECT * FROM pos WHERE po_id = $1", [item.source_po_id])
-        : { rows: [] },
-      item.source_pr_id
-        ? pool.query("SELECT * FROM purchase_requisitions WHERE pr_id = $1", [item.source_pr_id])
-        : { rows: [] },
-      item.source_sample_id
-        ? pool.query("SELECT * FROM samples WHERE sample_id = $1", [item.source_sample_id])
-        : { rows: [] },
-      pool.query(
-        `SELECT m.*,
-                dc.challan_number, dc.challan_date,
-                po.order_no AS po_order_no, po.vendor_name,
-                pr.pr_id AS pr_number,
-                (SELECT pri.material_description FROM purchase_requisition_items pri
-                  WHERE pri.pr_id = m.source_id AND pri.inventory_id = m.inventory_id LIMIT 1) AS pr_item_material,
-                s.building_name AS sample_building,
-                mir.mir_refrence_no AS mir_ref_no,
-                CASE
-                  WHEN m.source_type = 'dc'     THEN 'Received via DC: '  || COALESCE(dc.challan_number, '#' || m.source_id::text)
-                  WHEN m.source_type = 'po'     THEN 'From PO: '           || COALESCE(po.order_no,       '#' || m.source_id::text)
-                  WHEN m.source_type = 'pr'     THEN 'Issued to PR: '      || COALESCE(pr.pr_number,      '#' || m.source_id::text)
-                  WHEN m.source_type = 'sample' THEN 'Used in Sample: '    || COALESCE(s.building_name,   '#' || m.source_id::text)
-                  WHEN m.source_type = 'mir'    THEN 'MIR: '               || COALESCE(mir.mir_refrence_no,'#'|| m.source_id::text)
-                  ELSE COALESCE(m.source_ref, 'Manual entry')
-                END AS event_label
-           FROM inventory_movements m
-           LEFT JOIN delivery_challans dc  ON m.source_type='dc'     AND dc.dc_id    =m.source_id
-           LEFT JOIN pos               po  ON m.source_type='po'     AND po.po_id    =m.source_id
-           LEFT JOIN purchase_requisitions pr  ON m.source_type='pr'     AND pr.pr_id    =m.source_id
-           LEFT JOIN samples           s   ON m.source_type='sample' AND s.sample_id =m.source_id
-           LEFT JOIN mirs              mir ON m.source_type='mir'    AND mir.mir_id  =m.source_id
-          WHERE m.inventory_id = $1
-          ORDER BY m.created_at ASC`,
-        [id]
-      ),
-    ]);
+    if (source_type) { conditions.push(`source_type = $${idx++}`); values.push(source_type); }
+    if (change_type) { conditions.push(`change_type = $${idx++}`); values.push(change_type); }
+    if (from)        { conditions.push(`created_at >= $${idx++}`); values.push(from); }
+    if (to)          { conditions.push(`created_at <= $${idx++}`); values.push(to + " 23:59:59"); }
 
-    const movements = movRes.rows;
+    const histRes = await pool.query(
+      `SELECT * FROM inventory_full_history
+       WHERE ${conditions.join(" AND ")}
+       ORDER BY created_at DESC`,
+      values
+    );
 
     res.json({
-      item,
-      sources: {
-        delivery_challan: dcRes.rows[0] || null,
-        purchase_order:   poRes.rows[0] || null,
-        purchase_request: prRes.rows[0] || null,
-        sample:           sampleRes.rows[0] || null,
-      },
-      movements,
+      item:    itemRes.rows[0],
+      history: histRes.rows,
       summary: {
-        total_in:        movements.filter(r => r.movement_type === "in").reduce((a, r) => a + Number(r.quantity), 0),
-        total_out:       movements.filter(r => r.movement_type === "out").reduce((a, r) => a + Number(r.quantity), 0),
-        current_balance: item.current_quantity,
-        movement_count:  movements.length,
+        total_stock_in:  histRes.rows.reduce((a, r) => a + Number(r.stock_in),  0),
+        total_stock_out: histRes.rows.reduce((a, r) => a + Number(r.stock_out), 0),
+        count:           histRes.rows.length,
       },
     });
   } catch (err) {
-    console.error("Error fetching item background:", err);
+    console.error("Error fetching inventory history:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });

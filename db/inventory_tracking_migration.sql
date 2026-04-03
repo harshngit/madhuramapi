@@ -197,7 +197,7 @@ SELECT
     pris.material_description               AS pr_item_name,
     s.building_name                         AS sample_building,
     s.site_name                             AS sample_site,
-    mir.mir_refrence_no                     AS mir_ref_no,
+    mir.mir_refrence_no                     AS mir_ref_no,     
     h.project_id,
     h.project_name,
     h.notes,
