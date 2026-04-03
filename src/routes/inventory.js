@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { pool } = require("../db");
 const { logActivity } = require("./dashboard");
-const { logInventoryHistory } = require("./inventory_history"); // ← NEW
+const { logInventoryHistory } = require("./inventory_history");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPER: record a movement + update current_quantity on inventories
@@ -43,7 +43,7 @@ async function recordMovement(client, {
   );
   const balance_after = Number(updRes.rows[0]?.current_quantity ?? 0);
 
-  // Insert into inventory_movements (existing table)
+  // Insert into inventory_movements
   await client.query(
     `INSERT INTO inventory_movements
        (inventory_id, movement_type, quantity, balance_after,
@@ -59,7 +59,7 @@ async function recordMovement(client, {
     ]
   );
 
-  // ── NEW: also log into inventory_history ──────────────────────────────────
+  // Also log into inventory_history
   await logInventoryHistory(client, {
     inventory_id,
     item_name,
@@ -81,6 +81,66 @@ async function recordMovement(client, {
   });
 
   return balance_after;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPER: resolve human-readable source name for a history/movement row
+// ─────────────────────────────────────────────────────────────────────────────
+async function resolveSourceName(sourceType, sourceId) {
+  if (!sourceType || !sourceId) return null;
+  try {
+    switch (sourceType) {
+      case "dc": {
+        const r = await pool.query(
+          "SELECT challan_number, challan_date FROM delivery_challans WHERE dc_id = $1",
+          [sourceId]
+        );
+        return r.rows[0]
+          ? { label: `DC: ${r.rows[0].challan_number}`, ...r.rows[0] }
+          : null;
+      }
+      case "po": {
+        const r = await pool.query(
+          "SELECT order_no, vendor_name FROM pos WHERE po_id = $1",
+          [sourceId]
+        );
+        return r.rows[0]
+          ? { label: `PO: ${r.rows[0].order_no}${r.rows[0].vendor_name ? ` (${r.rows[0].vendor_name})` : ""}`, ...r.rows[0] }
+          : null;
+      }
+      case "pr": {
+        const r = await pool.query(
+          "SELECT pr_id, location FROM purchase_requisitions WHERE pr_id = $1",
+          [sourceId]
+        );
+        return r.rows[0]
+          ? { label: `PR: ${r.rows[0].pr_id || `#${sourceId}`}`, ...r.rows[0] }
+          : null;
+      }
+      case "sample": {
+        const r = await pool.query(
+          "SELECT building_name, site_name FROM samples WHERE sample_id = $1",
+          [sourceId]
+        );
+        return r.rows[0]
+          ? { label: `Sample: ${r.rows[0].building_name || r.rows[0].site_name || `#${sourceId}`}`, ...r.rows[0] }
+          : null;
+      }
+      case "mir": {
+        const r = await pool.query(
+          "SELECT mir_refrence_no FROM mirs WHERE mir_id = $1",
+          [sourceId]
+        );
+        return r.rows[0]
+          ? { label: `MIR: ${r.rows[0].mir_refrence_no || `#${sourceId}`}`, ...r.rows[0] }
+          : null;
+      }
+      default:
+        return { label: "Manual Entry" };
+    }
+  } catch {
+    return null;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -246,6 +306,7 @@ router.get("/", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/inventory/search?q=
+// Basic search — returns matching items with movement totals
 // ─────────────────────────────────────────────────────────────────────────────
 /**
  * @swagger
@@ -274,11 +335,16 @@ router.get("/search", async (req, res) => {
          i.*,
          dc.challan_number   AS last_dc_challan,
          dc.challan_date     AS last_dc_date,
+         po.order_no         AS po_order_no,
+         po.vendor_name      AS po_vendor_name,
+         s.building_name     AS sample_building,
          COALESCE(mv.total_in,  0) AS total_in,
          COALESCE(mv.total_out, 0) AS total_out,
          mv.movement_count
        FROM inventories i
-       LEFT JOIN delivery_challans dc ON dc.dc_id = i.source_dc_id
+       LEFT JOIN delivery_challans dc ON dc.dc_id    = i.source_dc_id
+       LEFT JOIN pos               po ON po.po_id    = i.source_po_id
+       LEFT JOIN samples           s  ON s.sample_id = i.source_sample_id
        LEFT JOIN LATERAL (
          SELECT
            SUM(CASE WHEN movement_type = 'in'  THEN quantity ELSE 0 END) AS total_in,
@@ -295,6 +361,288 @@ router.get("/search", async (req, res) => {
     res.json(result.rows);
   } catch (err) {
     console.error("Error searching inventory:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/inventory/search-with-history?q=ITEM_NAME
+//
+// ★ THE KEY NEW ENDPOINT ★
+//
+// User searches for an item by name/brand.
+// Response includes:
+//   - All matching inventory items (with current stock)
+//   - For EACH item: full history with resolved source names
+//     (DC challan number, PO order no, PR number, Sample building, MIR ref)
+//   - Summary: total in, total out, current balance
+//
+// Query params:
+//   q           (required) — search term
+//   project_id  (optional) — filter to a specific project
+//   from        (optional) — history date range start (YYYY-MM-DD)
+//   to          (optional) — history date range end   (YYYY-MM-DD)
+//   limit       (optional) — max history rows per item (default 50)
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/inventory/search-with-history:
+ *   get:
+ *     summary: Search inventory by name and return full movement history
+ *     tags: [Inventory]
+ *     description: |
+ *       One-call endpoint for the "find an item and see everything that happened to it" flow.
+ *       Returns all matching items plus their complete movement history with resolved
+ *       source document names (DC challan number, PO order, PR number, Sample building, MIR ref).
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema: { type: string }
+ *         description: Search term (matches name or brand, case-insensitive)
+ *       - in: query
+ *         name: project_id
+ *         schema: { type: integer }
+ *         description: Filter to a specific project
+ *       - in: query
+ *         name: from
+ *         schema: { type: string, format: date }
+ *         description: History from date (e.g. 2024-01-01)
+ *       - in: query
+ *         name: to
+ *         schema: { type: string, format: date }
+ *         description: History to date (e.g. 2024-12-31)
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 50 }
+ *         description: Max history rows per item
+ *     responses:
+ *       200:
+ *         description: |
+ *           { count, items: [ { ...item, history: [...], summary: {...} } ] }
+ *       400:
+ *         description: Missing q param
+ *       500:
+ *         description: Server error
+ */
+router.get("/search-with-history", async (req, res) => {
+  try {
+    const { q, project_id, from, to, limit = 50 } = req.query;
+    if (!q || !q.trim())
+      return res.status(400).json({ error: "Query parameter 'q' is required" });
+
+    const keyword  = `%${q.trim()}%`;
+    const limitNum = Math.min(200, Math.max(1, parseInt(limit) || 50));
+
+    // ── Step 1: find matching inventory items ─────────────────────────────
+    const itemQuery = project_id
+      ? `SELECT i.*,
+               dc.challan_number   AS source_dc_challan,
+               dc.challan_date     AS source_dc_date,
+               po.order_no         AS source_po_order_no,
+               po.vendor_name      AS source_po_vendor,
+               pr.pr_number        AS source_pr_number,
+               s.building_name     AS source_sample_building,
+               s.site_name         AS source_sample_site
+             FROM inventories i
+             LEFT JOIN delivery_challans dc ON dc.dc_id    = i.source_dc_id
+             LEFT JOIN pos               po ON po.po_id    = i.source_po_id
+             LEFT JOIN purchase_requisitions pr ON pr.pr_id    = i.source_pr_id
+             LEFT JOIN samples           s  ON s.sample_id = i.source_sample_id
+            WHERE (i.name ILIKE $1 OR i.brand ILIKE $1)
+              AND (i.project_id = $2 OR i.project_id IS NULL)
+            ORDER BY CASE WHEN i.project_id = $2 THEN 0 ELSE 1 END, i.updated_at DESC`
+      : `SELECT i.*,
+               dc.challan_number   AS source_dc_challan,
+               dc.challan_date     AS source_dc_date,
+               po.order_no         AS source_po_order_no,
+               po.vendor_name      AS source_po_vendor,
+               pr.pr_number        AS source_pr_number,
+               s.building_name     AS source_sample_building,
+               s.site_name         AS source_sample_site
+             FROM inventories i
+             LEFT JOIN delivery_challans dc ON dc.dc_id    = i.source_dc_id
+             LEFT JOIN pos               po ON po.po_id    = i.source_po_id
+             LEFT JOIN purchase_requisitions pr ON pr.pr_id    = i.source_pr_id
+             LEFT JOIN samples           s  ON s.sample_id = i.source_sample_id
+            WHERE (i.name ILIKE $1 OR i.brand ILIKE $1)
+            ORDER BY i.updated_at DESC`;
+
+    const itemParams = project_id ? [keyword, Number(project_id)] : [keyword];
+    const itemsRes   = await pool.query(itemQuery, itemParams);
+
+    if (itemsRes.rows.length === 0) {
+      return res.json({ count: 0, items: [], search_term: q.trim() });
+    }
+
+    // ── Step 2: for each item load full history with resolved source names ─
+    const itemsWithHistory = await Promise.all(
+      itemsRes.rows.map(async (item) => {
+        // Build history WHERE clause
+        const histConditions = ["h.inventory_id = $1"];
+        const histValues     = [item.inventory_id];
+        let   histIdx        = 2;
+
+        if (from) { histConditions.push(`h.created_at >= $${histIdx++}`); histValues.push(from); }
+        if (to)   { histConditions.push(`h.created_at <= $${histIdx++}`); histValues.push(to + " 23:59:59"); }
+
+        const histWhere = histConditions.join(" AND ");
+
+        // Fetch history rows with full source document joins
+        const histRes = await pool.query(
+          `SELECT
+             h.history_id,
+             h.change_type,
+             CASE h.change_type
+               WHEN 'stock_in'   THEN 'Stock In'
+               WHEN 'stock_out'  THEN 'Stock Out'
+               WHEN 'adjustment' THEN 'Adjustment'
+               WHEN 'created'    THEN 'Item Created'
+               WHEN 'updated'    THEN 'Item Updated'
+               WHEN 'deleted'    THEN 'Item Deleted'
+               ELSE h.change_type
+             END AS change_type_label,
+             h.stock_in,
+             h.stock_out,
+             h.balance_before,
+             h.balance_after,
+             (h.balance_after - h.balance_before) AS net_change,
+             h.source_type,
+             CASE h.source_type
+               WHEN 'dc'     THEN 'Delivery Challan'
+               WHEN 'po'     THEN 'Purchase Order'
+               WHEN 'pr'     THEN 'Purchase Request'
+               WHEN 'sample' THEN 'Sample'
+               WHEN 'mir'    THEN 'MIR'
+               WHEN 'manual' THEN 'Manual Entry'
+               ELSE COALESCE(h.source_type, 'Unknown')
+             END AS source_type_label,
+             h.source_id,
+             h.source_ref,
+
+             -- ── Resolved source document details ──────────────
+             dc.challan_number     AS dc_challan_number,
+             dc.challan_date       AS dc_challan_date,
+             dc.po_number          AS dc_po_number,
+
+             po.order_no           AS po_order_no,
+             po.vendor_name        AS po_vendor_name,
+             po.po_date            AS po_date,
+
+             pr.pr_number          AS pr_number,
+             pr.location           AS pr_location,
+             pr.project_name       AS pr_project_name,
+
+             -- PR item-level detail: which material was issued
+             (SELECT pri2.material_description
+                FROM purchase_requisition_items pri2
+               WHERE pri2.pr_id = h.source_id
+                 AND pri2.inventory_id = h.inventory_id
+               LIMIT 1)           AS pr_item_material,
+
+             s.building_name       AS sample_building,
+             s.site_name           AS sample_site,
+             s.work_done           AS sample_work_done,
+
+             mir.mir_refrence_no   AS mir_ref_no,
+
+             -- ── Who / when ────────────────────────────────────
+             h.project_id,
+             h.project_name,
+             h.notes,
+             h.performed_by,
+             h.performed_by_name,
+             h.changed_fields,
+             h.created_at,
+
+             -- ── Human-readable event label ────────────────────
+             CASE
+               WHEN h.source_type = 'dc'     THEN 'Received via DC: ' || COALESCE(dc.challan_number, '#' || h.source_id::text)
+               WHEN h.source_type = 'po'     THEN 'From PO: '         || COALESCE(po.order_no,       '#' || h.source_id::text)
+               WHEN h.source_type = 'pr'     THEN 'Issued to PR: '    || COALESCE(pr.pr_number,      '#' || h.source_id::text)
+               WHEN h.source_type = 'sample' THEN 'Used in Sample: '  || COALESCE(s.building_name,   '#' || h.source_id::text)
+               WHEN h.source_type = 'mir'    THEN 'MIR: '             || COALESCE(mir.mir_refrence_no,'#' || h.source_id::text)
+               WHEN h.change_type = 'created'THEN 'Item created'
+               WHEN h.change_type = 'updated'THEN 'Metadata updated'
+               ELSE COALESCE(h.source_ref, 'Manual entry')
+             END AS event_label
+
+           FROM inventory_history h
+           LEFT JOIN delivery_challans dc
+                  ON h.source_type = 'dc'     AND dc.dc_id      = h.source_id
+           LEFT JOIN pos po
+                  ON h.source_type = 'po'     AND po.po_id       = h.source_id
+           LEFT JOIN prs pr
+                  ON h.source_type = 'pr'     AND pr.pr_id       = h.source_id
+           LEFT JOIN samples s
+                  ON h.source_type = 'sample' AND s.sample_id    = h.source_id
+           LEFT JOIN mirs mir
+                  ON h.source_type = 'mir'    AND mir.mir_id     = h.source_id
+           WHERE ${histWhere}
+           ORDER BY h.created_at DESC
+           LIMIT $${histIdx}`,
+          [...histValues, limitNum]
+        );
+
+        // ── Summary for this item ────────────────────────────────────────
+        const summaryRes = await pool.query(
+          `SELECT
+             COALESCE(SUM(stock_in),  0) AS total_stock_in,
+             COALESCE(SUM(stock_out), 0) AS total_stock_out,
+             COUNT(*)                    AS total_events,
+             MIN(created_at)             AS first_event_at,
+             MAX(created_at)             AS last_event_at
+           FROM inventory_history
+           WHERE inventory_id = $1`,
+          [item.inventory_id]
+        );
+
+        return {
+          // Item core details
+          inventory_id:    item.inventory_id,
+          name:            item.name,
+          brand:           item.brand,
+          units:           item.units,
+          price:           item.price,
+          current_balance: item.current_quantity,
+          project_id:      item.project_id,
+
+          // Where this item originally came from
+          origin: {
+            dc:     item.source_dc_id     ? { dc_id:     item.source_dc_id,     challan_number: item.source_dc_challan,   challan_date:    item.source_dc_date   } : null,
+            po:     item.source_po_id     ? { po_id:     item.source_po_id,     order_no:       item.source_po_order_no,  vendor_name:     item.source_po_vendor } : null,
+            pr:     item.source_pr_id     ? { pr_id:     item.source_pr_id,     pr_number:      item.source_pr_number                                            } : null,
+            sample: item.source_sample_id ? { sample_id: item.source_sample_id, building_name:  item.source_sample_building, site_name: item.source_sample_site  } : null,
+          },
+
+          // Aggregated summary
+          summary: {
+            total_stock_in:  Number(summaryRes.rows[0]?.total_stock_in  || 0),
+            total_stock_out: Number(summaryRes.rows[0]?.total_stock_out || 0),
+            current_balance: Number(item.current_quantity || 0),
+            total_events:    Number(summaryRes.rows[0]?.total_events    || 0),
+            first_event_at:  summaryRes.rows[0]?.first_event_at || null,
+            last_event_at:   summaryRes.rows[0]?.last_event_at  || null,
+          },
+
+          // Full history list
+          history: histRes.rows,
+        };
+      })
+    );
+
+    res.json({
+      search_term: q.trim(),
+      count:       itemsWithHistory.length,
+      filters: {
+        project_id: project_id || null,
+        from:       from || null,
+        to:         to   || null,
+      },
+      items: itemsWithHistory,
+    });
+  } catch (err) {
+    console.error("Error in search-with-history:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
@@ -323,7 +671,19 @@ router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const result = await pool.query(
-      "SELECT * FROM inventories WHERE inventory_id = $1",
+      `SELECT i.*,
+              dc.challan_number   AS source_dc_challan,
+              dc.challan_date     AS source_dc_date,
+              po.order_no         AS source_po_order_no,
+              po.vendor_name      AS source_po_vendor,
+              pr.pr_number        AS source_pr_number,
+              s.building_name     AS source_sample_building
+         FROM inventories i
+         LEFT JOIN delivery_challans dc ON dc.dc_id    = i.source_dc_id
+         LEFT JOIN pos               po ON po.po_id    = i.source_po_id
+         LEFT JOIN purchase_requisitions pr ON pr.pr_id    = i.source_pr_id
+         LEFT JOIN samples           s  ON s.sample_id = i.source_sample_id
+        WHERE i.inventory_id = $1`,
       [id]
     );
     if (result.rows.length === 0)
@@ -336,13 +696,14 @@ router.get("/:id", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/inventory/:id/history  – movement history for one item (existing)
+// GET /api/inventory/:id/history
+// Movement history for one item — with resolved source document names
 // ─────────────────────────────────────────────────────────────────────────────
 /**
  * @swagger
  * /api/inventory/{id}/history:
  *   get:
- *     summary: Get movement history for an inventory item
+ *     summary: Get movement history for an inventory item (with source names resolved)
  *     tags: [Inventory]
  *     parameters:
  *       - in: path
@@ -360,7 +721,7 @@ router.get("/:id", async (req, res) => {
  *         schema: { type: string, format: date }
  *     responses:
  *       200:
- *         description: Movement history with item details
+ *         description: Movement history with item details and resolved source names
  *       404:
  *         description: Inventory item not found
  */
@@ -370,7 +731,18 @@ router.get("/:id/history", async (req, res) => {
     const { source_type, from, to } = req.query;
 
     const itemRes = await pool.query(
-      "SELECT * FROM inventories WHERE inventory_id = $1",
+      `SELECT i.*,
+              dc.challan_number   AS source_dc_challan,
+              po.order_no         AS source_po_order_no,
+              po.vendor_name      AS source_po_vendor,
+              pr.pr_number        AS source_pr_number,
+              s.building_name     AS source_sample_building
+         FROM inventories i
+         LEFT JOIN delivery_challans dc ON dc.dc_id    = i.source_dc_id
+         LEFT JOIN pos               po ON po.po_id    = i.source_po_id
+         LEFT JOIN prs               pr ON pr.pr_id    = i.source_pr_id
+         LEFT JOIN samples           s  ON s.sample_id = i.source_sample_id
+        WHERE i.inventory_id = $1`,
       [id]
     );
     if (itemRes.rows.length === 0)
@@ -387,22 +759,50 @@ router.get("/:id/history", async (req, res) => {
     const movRes = await pool.query(
       `SELECT
          m.*,
-         dc.challan_number, dc.challan_date, dc.po_number AS dc_po_number,
-         po.order_no AS po_order_no, po.vendor_name,
-         pr.pr_number, pr.location AS pr_location,
-         s.building_name AS sample_building
+         -- DC
+         dc.challan_number     AS dc_challan_number,
+         dc.challan_date       AS dc_challan_date,
+         dc.po_number          AS dc_po_number,
+         -- PO
+         po.order_no           AS po_order_no,
+         po.vendor_name        AS po_vendor_name,
+         -- PR
+         pr.pr_number          AS pr_number,
+         pr.location           AS pr_location,
+         pr.project_name       AS pr_project_name,
+         -- PR item material name (what was issued)
+         (SELECT pri.material_description
+            FROM purchase_requisition_items pri
+           WHERE pri.pr_id = m.source_id
+             AND pri.inventory_id = m.inventory_id
+           LIMIT 1)            AS pr_item_material,
+         -- Sample
+         s.building_name       AS sample_building,
+         s.site_name           AS sample_site,
+         -- MIR
+         mir.mir_refrence_no   AS mir_ref_no,
+         -- Computed event label
+         CASE
+           WHEN m.source_type = 'dc'     THEN 'Received via DC: '  || COALESCE(dc.challan_number, '#' || m.source_id::text)
+           WHEN m.source_type = 'po'     THEN 'From PO: '           || COALESCE(po.order_no,       '#' || m.source_id::text)
+           WHEN m.source_type = 'pr'     THEN 'Issued to PR: '      || COALESCE(pr.pr_number,      '#' || m.source_id::text)
+           WHEN m.source_type = 'sample' THEN 'Used in Sample: '    || COALESCE(s.building_name,   '#' || m.source_id::text)
+           WHEN m.source_type = 'mir'    THEN 'MIR: '               || COALESCE(mir.mir_refrence_no,'#'|| m.source_id::text)
+           ELSE COALESCE(m.source_ref, 'Manual entry')
+         END AS event_label
        FROM inventory_movements m
-       LEFT JOIN delivery_challans dc ON m.source_type = 'dc'     AND dc.dc_id    = m.source_id
-       LEFT JOIN pos              po  ON m.source_type = 'po'     AND po.po_id    = m.source_id
-       LEFT JOIN prs              pr  ON m.source_type = 'pr'     AND pr.pr_id    = m.source_id
-       LEFT JOIN samples          s   ON m.source_type = 'sample' AND s.sample_id = m.source_id
+       LEFT JOIN delivery_challans dc  ON m.source_type = 'dc'     AND dc.dc_id      = m.source_id
+       LEFT JOIN pos               po  ON m.source_type = 'po'     AND po.po_id       = m.source_id
+       LEFT JOIN prs               pr  ON m.source_type = 'pr'     AND pr.pr_id       = m.source_id
+       LEFT JOIN samples           s   ON m.source_type = 'sample' AND s.sample_id    = m.source_id
+       LEFT JOIN mirs              mir ON m.source_type = 'mir'    AND mir.mir_id     = m.source_id
        WHERE ${conditions.join(" AND ")}
        ORDER BY m.created_at DESC`,
       values
     );
 
     res.json({
-      item: itemRes.rows[0],
+      item:      itemRes.rows[0],
       movements: movRes.rows,
       summary: {
         total_in:  movRes.rows.filter(r => r.movement_type === "in").reduce((a, r) => a + Number(r.quantity), 0),
@@ -418,6 +818,7 @@ router.get("/:id/history", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/inventory/:id/background
+// Full provenance — upstream chain + all movements
 // ─────────────────────────────────────────────────────────────────────────────
 /**
  * @swagger
@@ -456,7 +857,7 @@ router.get("/:id/background", async (req, res) => {
         ? pool.query("SELECT * FROM pos WHERE po_id = $1", [item.source_po_id])
         : { rows: [] },
       item.source_pr_id
-        ? pool.query("SELECT * FROM prs WHERE pr_id = $1", [item.source_pr_id])
+        ? pool.query("SELECT * FROM purchase_requisitions WHERE pr_id = $1", [item.source_pr_id])
         : { rows: [] },
       item.source_sample_id
         ? pool.query("SELECT * FROM samples WHERE sample_id = $1", [item.source_sample_id])
@@ -465,13 +866,25 @@ router.get("/:id/background", async (req, res) => {
         `SELECT m.*,
                 dc.challan_number, dc.challan_date,
                 po.order_no AS po_order_no, po.vendor_name,
-                pr.pr_number,
-                s.building_name AS sample_building
+                pr.pr_id AS pr_number,
+                (SELECT pri.material_description FROM purchase_requisition_items pri
+                  WHERE pri.pr_id = m.source_id AND pri.inventory_id = m.inventory_id LIMIT 1) AS pr_item_material,
+                s.building_name AS sample_building,
+                mir.mir_refrence_no AS mir_ref_no,
+                CASE
+                  WHEN m.source_type = 'dc'     THEN 'Received via DC: '  || COALESCE(dc.challan_number, '#' || m.source_id::text)
+                  WHEN m.source_type = 'po'     THEN 'From PO: '           || COALESCE(po.order_no,       '#' || m.source_id::text)
+                  WHEN m.source_type = 'pr'     THEN 'Issued to PR: '      || COALESCE(pr.pr_number,      '#' || m.source_id::text)
+                  WHEN m.source_type = 'sample' THEN 'Used in Sample: '    || COALESCE(s.building_name,   '#' || m.source_id::text)
+                  WHEN m.source_type = 'mir'    THEN 'MIR: '               || COALESCE(mir.mir_refrence_no,'#'|| m.source_id::text)
+                  ELSE COALESCE(m.source_ref, 'Manual entry')
+                END AS event_label
            FROM inventory_movements m
-           LEFT JOIN delivery_challans dc ON m.source_type='dc'     AND dc.dc_id    =m.source_id
-           LEFT JOIN pos              po  ON m.source_type='po'     AND po.po_id    =m.source_id
-           LEFT JOIN prs              pr  ON m.source_type='pr'     AND pr.pr_id    =m.source_id
-           LEFT JOIN samples          s   ON m.source_type='sample' AND s.sample_id =m.source_id
+           LEFT JOIN delivery_challans dc  ON m.source_type='dc'     AND dc.dc_id    =m.source_id
+           LEFT JOIN pos               po  ON m.source_type='po'     AND po.po_id    =m.source_id
+           LEFT JOIN purchase_requisitions pr  ON m.source_type='pr'     AND pr.pr_id    =m.source_id
+           LEFT JOIN samples           s   ON m.source_type='sample' AND s.sample_id =m.source_id
+           LEFT JOIN mirs              mir ON m.source_type='mir'    AND mir.mir_id  =m.source_id
           WHERE m.inventory_id = $1
           ORDER BY m.created_at ASC`,
         [id]
@@ -626,7 +1039,6 @@ router.put("/:id", async (req, res) => {
     const { id } = req.params;
     const { brand, name, price, stockin, billing, units, width, height, user_id, user_name } = req.body;
 
-    // Snapshot old values for change diff
     const oldRes = await client.query(
       "SELECT * FROM inventories WHERE inventory_id = $1",
       [id]
@@ -656,7 +1068,6 @@ router.put("/:id", async (req, res) => {
 
     const updated = result.rows[0];
 
-    // Build a diff of what changed for the history log
     const changed_fields = {};
     const fields = ["brand", "name", "price", "stockin", "billing", "units", "width", "height"];
     fields.forEach(f => {
@@ -665,7 +1076,6 @@ router.put("/:id", async (req, res) => {
       }
     });
 
-    // Log to inventory_history
     await logInventoryHistory(client, {
       inventory_id:      id,
       item_name:         updated.name,
@@ -734,7 +1144,7 @@ router.patch("/:id/stockin", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   const client = await pool.connect();
   try {
-    const { id }                      = req.params;
+    const { id }             = req.params;
     const { user_id, user_name } = req.body || {};
 
     const existing = await client.query(
@@ -748,7 +1158,6 @@ router.delete("/:id", async (req, res) => {
 
     await client.query("BEGIN");
 
-    // Log deletion BEFORE the row is removed (CASCADE will wipe history entries)
     await logInventoryHistory(client, {
       inventory_id:      id,
       item_name:         item.name,
