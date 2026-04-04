@@ -81,6 +81,7 @@ app.use("/api/vendor-price-list", vendorPriceListRoutes);
 app.use("/api/pr",                prRoutes);
 app.use("/api/attendance",        attendanceRoutes);
 app.use("/api/quotations",        quotationRoutes);
+app.use("/api/quotation",         quotationRoutes); // Supports both singular and plural
 app.use("/api/vendor-price-list", bulkInventoryRoutes);
 app.use("/api/inventory-trace",   traceRoutes);
 app.use("/api/access",            accessControlRoutes); // ← NEW

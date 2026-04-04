@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS quotations (
 
   -- Status workflow
   status              TEXT NOT NULL DEFAULT 'draft'
-                        CHECK (status IN ('draft','sent','approved','rejected')),
+                        CHECK (status IN ('draft','pending','sent','approved','rejected')),
 
   -- Source file paths (can be multiple)
   boq_files           JSONB DEFAULT '[]'::jsonb,

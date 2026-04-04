@@ -18,7 +18,7 @@ const drawingDir = path.join(__dirname, "../../uploads/quotations/drawings");
 
 // ─── Multer: Excel only (for /import/excel) ───────────────────────────────────
 const excelStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
+  destination: (req, file, cb) => cb(null, boqDir),
   filename:    (req, file, cb) => {
     cb(null, Date.now() + "-" + Math.round(Math.random() * 1e9) + path.extname(file.originalname));
   },
@@ -210,12 +210,12 @@ async function insertItems(client, quotationId, items) {
  *   description: Quotation (BOQ) management
  */
 
-// ─── STANDALONE UPLOAD (BOQ / Drawings) ───────────────────────────────────────
+// ─── STANDALONE UPLOAD (Drawings) ─────────────────────────────────────────────
 /**
  * @swagger
  * /api/quotation/upload:
  *   post:
- *     summary: Upload BOQ or Drawing files independently
+ *     summary: Upload Drawing files independently
  *     tags: [Quotations]
  *     requestBody:
  *       required: true
@@ -224,12 +224,6 @@ async function insertItems(client, quotationId, items) {
  *           schema:
  *             type: object
  *             properties:
- *               boq:
- *                 type: array
- *                 items:
- *                   type: string
- *                   format: binary
- *                 description: BOQ files
  *               drawing:
  *                 type: array
  *                 items:
@@ -244,10 +238,6 @@ async function insertItems(client, quotationId, items) {
  *             schema:
  *               type: object
  *               properties:
- *                 boq_files:
- *                   type: array
- *                   items:
- *                     type: string
  *                 drawing_files:
  *                   type: array
  *                   items:
@@ -256,21 +246,16 @@ async function insertItems(client, quotationId, items) {
 router.post(
   "/upload",
   standaloneUpload.fields([
-    { name: "boq", maxCount: 10 },
     { name: "drawing", maxCount: 10 },
   ]),
   (req, res) => {
     try {
-      const boq_files = req.files["boq"]
-        ? req.files["boq"].map((f) => `/uploads/quotations/boq/${f.filename}`)
-        : [];
       const drawing_files = req.files["drawing"]
         ? req.files["drawing"].map((f) => `/uploads/quotations/drawings/${f.filename}`)
         : [];
 
       res.json({
         success: true,
-        boq_files,
         drawing_files,
       });
     } catch (error) {
@@ -280,12 +265,12 @@ router.post(
   }
 );
 
-// ─── IMPORT Excel → parse → preview or save ───────────────────────────────────
+// ─── IMPORT Excel → Upload & Parse ───────────────────────────────────────────
 /**
  * @swagger
  * /api/quotations/import/excel:
  *   post:
- *     summary: Upload a BOQ Excel (.xls / .xlsx) and get back parsed quotation data
+ *     summary: Upload a BOQ Excel (.xls / .xlsx), parse it, and return the file URL + parsed items
  *     tags: [Quotations]
  *     requestBody:
  *       required: true
@@ -300,22 +285,23 @@ router.post(
  *                 type: string
  *                 format: binary
  *                 description: BOQ Excel file (.xls or .xlsx)
- *               project_name:
- *                 type: string
- *               client_name:
- *                 type: string
- *               save:
- *                 type: string
- *                 description: Pass "true" to auto-save parsed data to DB
- *               created_by:
- *                 type: string
- *               created_by_name:
- *                 type: string
  *     responses:
  *       200:
- *         description: Parsed BOQ data (preview mode — not saved)
- *       201:
- *         description: Quotation saved to DB (save=true)
+ *         description: BOQ file uploaded and parsed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 file_url: { type: string }
+ *                 message: { type: string }
+ *                 items: { type: array, items: { type: object } }
+ *                 summary: { type: object }
+ *                 total_amount: { type: number }
+ *                 gst_amount: { type: number }
+ *                 grand_total: { type: number }
+ *                 items_count: { type: number }
  *       400:
  *         description: No file uploaded or wrong file type
  *       500:
@@ -334,64 +320,18 @@ router.post("/import/excel", uploadExcel.single("file"), async (req, res) => {
     const gstAmount   = summary.gst_amount  || parseFloat(((totalAmount * gstPct) / 100).toFixed(2));
     const grandTotal  = summary.grand_total || parseFloat((totalAmount + gstAmount).toFixed(2));
 
-    const payload = {
-      project_name:   req.body.project_name  || null,
-      client_name:    req.body.client_name   || null,
-      quotation_date: new Date().toISOString().split("T")[0],
-      gst_percentage: gstPct,
-      total_amount:   totalAmount,
-      gst_amount:     gstAmount,
-      grand_total:    grandTotal,
-      boq_files:      [`/uploads/quotations/${req.file.filename}`],
-      parsed_sheet:   sheet_name,
-      items_count:    items.length,
+    const file_url = `/uploads/quotations/boq/${req.file.filename}`;
+    
+    res.json({
+      success: true,
+      file_url,
+      message: `Parsed ${items.length} BOQ items from sheet "${sheet_name}"`,
+      items_count: items.length,
+      total_amount: totalAmount,
+      gst_amount: gstAmount,
+      grand_total: grandTotal,
       items,
       summary,
-    };
-
-    if (req.body.save === "true") {
-      const dbClient = await pool.connect();
-      try {
-        await dbClient.query("BEGIN");
-
-        const quotResult = await dbClient.query(
-          `INSERT INTO quotations
-             (project_name, client_name, quotation_date, total_amount,
-              gst_percentage, gst_amount, grand_total, boq_files,
-              status, created_by, created_by_name)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'draft',$9,$10)
-           RETURNING *`,
-          [
-            payload.project_name,
-            payload.client_name,
-            payload.quotation_date,
-            totalAmount, gstPct, gstAmount, grandTotal,
-            JSON.stringify(payload.boq_files),
-            req.body.created_by      || null,
-            req.body.created_by_name || null,
-          ]
-        );
-        const quotation = quotResult.rows[0];
-        await insertItems(dbClient, quotation.id, items);
-        await dbClient.query("COMMIT");
-
-        return res.status(201).json({
-          message:        "Quotation imported and saved",
-          quotation_id:   quotation.id,
-          items_imported: items.length,
-          ...payload,
-        });
-      } catch (err) {
-        await dbClient.query("ROLLBACK");
-        throw err;
-      } finally {
-        dbClient.release();
-      }
-    }
-
-    res.json({
-      message: `Parsed ${items.length} BOQ items from sheet "${sheet_name}"`,
-      ...payload,
     });
   } catch (err) {
     console.error("Import excel error:", err);
@@ -533,7 +473,7 @@ router.post("/", async (req, res) => {
  *     summary: Get all quotations
  *     tags: [Quotations]
  *     parameters:
- *       - { in: query, name: status, schema: { type: string, enum: [draft, sent, approved, rejected] } }
+ *       - { in: query, name: status, schema: { type: string, enum: [all, draft, pending, sent, approved, rejected], default: all } }
  *       - { in: query, name: is_revised_offer, schema: { type: boolean } }
  *     responses:
  *       200:
@@ -541,11 +481,11 @@ router.post("/", async (req, res) => {
  */
 router.get("/", async (req, res) => {
   try {
-    const { status, is_revised_offer } = req.query;
+    const { status = "all", is_revised_offer } = req.query;
     let query = "SELECT * FROM quotations";
     const params = [], conditions = [];
 
-    if (status) {
+    if (status && status !== "all") {
       params.push(status);
       conditions.push(`status = $${params.length}`);
     }
@@ -782,7 +722,7 @@ router.get("/:id", async (req, res) => {
  *                   type: string
  *               last_date_revised_offer:   { type: string, format: date }
  *               is_revised_offer:         { type: boolean }
- *               status:                   { type: string, enum: [draft, sent, approved, rejected] }
+ *               status:                   { type: string, enum: [draft, pending, sent, approved, rejected] }
  *               notes:                    { type: string }
  *               updated_by:               { type: string }
  *               updated_by_name:          { type: string }
@@ -986,7 +926,7 @@ router.delete("/:id", async (req, res) => {
  *             type: object
  *             required: [status]
  *             properties:
- *               status:          { type: string, enum: [draft, sent, approved, rejected] }
+ *               status:          { type: string, enum: [draft, pending, sent, approved, rejected] }
  *               updated_by:      { type: string }
  *               updated_by_name: { type: string }
  *     responses:
@@ -1002,7 +942,7 @@ router.patch("/:id/status", async (req, res) => {
     const { id } = req.params;
     const { status, updated_by, updated_by_name } = req.body;
 
-    const allowed = ["draft", "sent", "approved", "rejected"];
+    const allowed = ["draft", "pending", "sent", "approved", "rejected"];
     if (!status || !allowed.includes(status)) {
       return res.status(400).json({ error: `status must be one of: ${allowed.join(", ")}` });
     }
