@@ -266,8 +266,25 @@ router.post("/", async (req, res) => {
  * @swagger
  * /api/attendance:
  *   get:
- *     summary: Get all attendance records
+ *     summary: Get all attendance records (with optional filters)
  *     tags: [Attendance]
+ *     parameters:
+ *       - in: query
+ *         name: start_date
+ *         schema: { type: string, format: date }
+ *         description: Filter records from this date
+ *       - in: query
+ *         name: end_date
+ *         schema: { type: string, format: date }
+ *         description: Filter records up to this date
+ *       - in: query
+ *         name: status
+ *         schema: { type: string }
+ *         description: Filter by status (present/absent/pending)
+ *       - in: query
+ *         name: project_id
+ *         schema: { type: integer }
+ *         description: Filter by project ID
  *     responses:
  *       200:
  *         description: List of attendance records
@@ -280,11 +297,58 @@ router.post("/", async (req, res) => {
  */
 router.get("/", async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM attendance ORDER BY date DESC, created_at DESC");
+    const { start_date, end_date, status, project_id } = req.query;
+    let query = "SELECT * FROM attendance WHERE 1=1";
+    const values = [];
+    let p = 1;
+
+    if (start_date) {
+      query += ` AND date >= $${p++}`;
+      values.push(start_date);
+    }
+    if (end_date) {
+      query += ` AND date <= $${p++}`;
+      values.push(end_date);
+    }
+    if (status) {
+      query += ` AND status = $${p++}`;
+      values.push(status);
+    }
+    if (project_id) {
+      query += ` AND project_id = $${p++}`;
+      values.push(project_id);
+    }
+
+    query += " ORDER BY date DESC, created_at DESC";
+    const result = await pool.query(query, values);
     res.json(result.rows);
   } catch (error) {
     console.error("Get attendance error:", error);
     res.status(500).json({ error: "Failed to fetch attendance records" });
+  }
+});
+
+/**
+ * @swagger
+ * /api/attendance/today/present:
+ *   get:
+ *     summary: Get today's present count
+ *     tags: [Attendance]
+ *     responses:
+ *       200:
+ *         description: Today's present count
+ */
+router.get("/today/present", async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const result = await pool.query(
+      "SELECT COUNT(*) FROM attendance WHERE date = $1 AND status = 'present'",
+      [today]
+    );
+    res.json({ date: today, count: parseInt(result.rows[0].count) });
+  } catch (error) {
+    console.error("Get today present count error:", error);
+    res.status(500).json({ error: "Failed to fetch today's present count" });
   }
 });
 

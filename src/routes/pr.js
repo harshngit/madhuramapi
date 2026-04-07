@@ -408,7 +408,13 @@ router.get("/:id", async (req, res) => {
  */
 router.get("/", async (req, res) => {
   try {
-    res.json(await getPrList("1=1", []));
+    const rows = await getPrList("1=1", []);
+    const prs = rows.map(pr => {
+      const items = Array.isArray(pr.items) ? pr.items : [];
+      const linked = items.length > 0 && items.every(i => i.inventory_id);
+      return { ...pr, linked };
+    });
+    res.json(prs);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

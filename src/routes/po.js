@@ -313,7 +313,12 @@ router.get("/project/:projectId", async (req, res) => {
   const { projectId } = req.params;
   try {
     const result = await pool.query("SELECT * FROM pos WHERE project_id = $1 ORDER BY created_at DESC", [projectId]);
-    res.json(result.rows);
+    const pos = result.rows.map(po => {
+      const items = Array.isArray(po.items) ? po.items : [];
+      const linked = items.length > 0 && items.every(i => i.inventory_id);
+      return { ...po, linked };
+    });
+    res.json(pos);
   } catch (error) {
     console.error("Error fetching POs:", error);
     res.status(500).json({ error: error.message });
@@ -343,7 +348,12 @@ router.get("/sample/:sampleId", async (req, res) => {
   const { sampleId } = req.params;
   try {
     const result = await pool.query("SELECT * FROM pos WHERE sample_id = $1 ORDER BY created_at DESC", [sampleId]);
-    res.json(result.rows);
+    const pos = result.rows.map(po => {
+      const items = Array.isArray(po.items) ? po.items : [];
+      const linked = items.length > 0 && items.every(i => i.inventory_id);
+      return { ...po, linked };
+    });
+    res.json(pos);
   } catch (error) {
     console.error("Error fetching POs by sample:", error);
     res.status(500).json({ error: error.message });

@@ -264,6 +264,15 @@ router.get("/search", async (req, res) => {
  *         name: prId
  *         required: true
  *         schema: { type: integer }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               force: { type: boolean, default: false }
+ *               user_id: { type: string }
+ *               user_name: { type: string }
  *     responses:
  *       200:
  *         description: Match results with strategy used per item
@@ -273,7 +282,7 @@ router.get("/search", async (req, res) => {
 router.post("/match/pr/:prId", async (req, res) => {
   try {
     const { prId } = req.params;
-    const { force = false } = req.body;
+    const { force = false } = req.body || {};
 
     const prRes = await pool.query(
       "SELECT * FROM purchase_requisitions WHERE pr_id = $1",
@@ -365,13 +374,145 @@ router.post("/match/pr/:prId", async (req, res) => {
     logActivity({
       action: "inventory_matched", entity_type: "pr",
       entity_id: prId, entity_name: `PR #${prId}`,
-      performed_by: req.body.user_id || null,
-      performed_by_name: req.body.user_name || null,
+      performed_by: (req.body || {}).user_id || null,
+      performed_by_name: (req.body || {}).user_name || null,
       project_id: pr.project_id,
       meta: { matched, unmatched },
     });
   } catch (err) {
     console.error("PR match error:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/inventory-trace/match/po/:poId
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/inventory-trace/match/po/{poId}:
+ *   post:
+ *     summary: Auto-link unmatched PO items to inventory by name / chain
+ *     tags: [InventoryTrace]
+ *     parameters:
+ *       - in: path
+ *         name: poId
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               force: { type: boolean, default: false }
+ *               user_id: { type: string }
+ *               user_name: { type: string }
+ *     responses:
+ *       200:
+ *         description: Match results
+ *       404:
+ *         description: PO not found
+ */
+router.post("/match/po/:poId", async (req, res) => {
+  try {
+    const { poId } = req.params;
+    const { force = false } = req.body || {};
+
+    const poRes = await pool.query("SELECT * FROM pos WHERE po_id = $1", [poId]);
+    if (!poRes.rows.length) return res.status(404).json({ error: "PO not found" });
+    const po = poRes.rows[0];
+
+    let items = Array.isArray(po.items) ? po.items : [];
+    let changed = false;
+    const results = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.inventory_id && !force) {
+        results.push({ index: i, description: item.description, status: "already_linked" });
+        continue;
+      }
+
+      const name = item.description;
+      if (!name) { results.push({ index: i, status: "skipped" }); continue; }
+
+      let match = null;
+
+      // Strategy 1: Chain match via sample_id
+      if (po.sample_id) {
+        const chainRes = await pool.query(
+          `SELECT i.*, dc.challan_number, dc.challan_date
+             FROM inventories i
+             LEFT JOIN delivery_challans dc ON dc.dc_id = i.source_dc_id
+            WHERE i.source_sample_id = $1 AND i.current_quantity > 0
+            ORDER BY i.current_quantity DESC LIMIT 10`,
+          [po.sample_id]
+        );
+        let best = null, bestScore = 0;
+        for (const row of chainRes.rows) {
+          const s = wordOverlap(row.name, name);
+          if (s > bestScore) { bestScore = s; best = row; }
+        }
+        if (bestScore >= 0.5) { match = best; match._strategy = "chain"; }
+      }
+
+      // Strategy 2: Name fuzzy
+      if (!match) {
+        match = await findBestInventoryMatch(name, po.project_id);
+        if (match) match._strategy = "name_fuzzy";
+      }
+
+      if (!match) {
+        results.push({
+          index: i,
+          description: name,
+          status: "unmatched",
+        });
+        continue;
+      }
+
+      item.inventory_id = match.inventory_id;
+      changed = true;
+
+      results.push({
+        index: i,
+        description: name,
+        status: "matched",
+        strategy: match._strategy,
+        matched_inventory: {
+          inventory_id: match.inventory_id,
+          name: match.name,
+          current_quantity: match.current_quantity,
+          challan_number: match.challan_number || null,
+        },
+      });
+    }
+
+    if (changed) {
+      await pool.query(
+        "UPDATE pos SET items=$1, updated_at=NOW() WHERE po_id=$2",
+        [JSON.stringify(items), poId]
+      );
+    }
+
+    res.json({
+      po_id: Number(poId),
+      total: results.length,
+      matched: results.filter(r => r.status === "matched").length,
+      unmatched: results.filter(r => r.status === "unmatched").length,
+      items: results,
+    });
+
+    logActivity({
+      action: "inventory_matched", entity_type: "po",
+      entity_id: poId, entity_name: `PO #${po.order_no || poId}`,
+      performed_by: (req.body || {}).user_id || null,
+      performed_by_name: (req.body || {}).user_name || null,
+      project_id: po.project_id,
+    });
+  } catch (err) {
+    console.error("PO match error:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
@@ -390,6 +531,15 @@ router.post("/match/pr/:prId", async (req, res) => {
  *         name: sampleId
  *         required: true
  *         schema: { type: integer }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               force: { type: boolean, default: false }
+ *               user_id: { type: string }
+ *               user_name: { type: string }
  *     responses:
  *       200:
  *         description: Match results per item
@@ -399,51 +549,61 @@ router.post("/match/pr/:prId", async (req, res) => {
 router.post("/match/sample/:sampleId", async (req, res) => {
   try {
     const { sampleId } = req.params;
-    const { force = false } = req.body;
+    const { force = false } = req.body || {};
 
     const sampleRes = await pool.query("SELECT * FROM samples WHERE sample_id=$1", [sampleId]);
     if (!sampleRes.rows.length) return res.status(404).json({ error: "Sample not found" });
     const sample = sampleRes.rows[0];
-    const items  = Array.isArray(sample.item_description) ? sample.item_description : [];
 
-    // Pre-load all inventory items sourced from this sample (chain match candidates)
-    const chainRows = await pool.query(
-      `SELECT i.*, dc.challan_number FROM inventories i
-       LEFT JOIN delivery_challans dc ON dc.dc_id = i.source_dc_id
-       WHERE i.source_sample_id=$1 AND i.current_quantity > 0`,
-      [sampleId]
-    );
-
+    let items = Array.isArray(sample.item_description) ? sample.item_description : [];
     let changed = false;
     const results = [];
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
+      if (item.inventory_id && !force) {
+        results.push({ index: i, description: item.description, status: "already_linked" });
+        continue;
+      }
+
       const name = item.description || item.name;
       if (!name) { results.push({ index: i, status: "skipped" }); continue; }
-      if (item.inventory_id && !force) { results.push({ index: i, status: "already_linked", inventory_id: item.inventory_id }); continue; }
 
-      // Strategy 1: chain match
       let match = null;
-      let bestScore = 0;
-      for (const row of chainRows.rows) {
+
+      // Strategy 1: Chain match via this sample's ID
+      const chainRes = await pool.query(
+        `SELECT i.*, dc.challan_number, dc.challan_date
+           FROM inventories i
+           LEFT JOIN delivery_challans dc ON dc.dc_id = i.source_dc_id
+          WHERE i.source_sample_id = $1 AND i.current_quantity > 0
+          ORDER BY i.current_quantity DESC LIMIT 10`,
+        [sampleId]
+      );
+      let best = null, bestScore = 0;
+      for (const row of chainRes.rows) {
         const s = wordOverlap(row.name, name);
-        if (s > bestScore) { bestScore = s; match = row; }
+        if (s > bestScore) { bestScore = s; best = row; }
       }
-      if (bestScore >= 0.5) {
-        match._strategy = "chain";
-      } else {
+      if (bestScore >= 0.5) { match = best; match._strategy = "chain"; }
+
+      // Strategy 2: Name fuzzy
+      if (!match) {
         match = await findBestInventoryMatch(name, sample.project_id);
         if (match) match._strategy = "name_fuzzy";
       }
 
       if (!match) {
-        results.push({ index: i, description: name, status: "unmatched",
-          tip: "Ensure a DC was received against a PO linked to this sample." });
+        results.push({
+          index: i,
+          description: name,
+          status: "unmatched",
+          tip: "Ensure a DC was received against a PO linked to this sample.",
+        });
         continue;
       }
 
-      items[i] = { ...item, inventory_id: match.inventory_id };
+      item.inventory_id = match.inventory_id;
       changed = true;
 
       results.push({
@@ -473,6 +633,14 @@ router.post("/match/sample/:sampleId", async (req, res) => {
       by_chain_match: results.filter(r => r.strategy === "chain").length,
       by_name_match: results.filter(r => r.strategy === "name_fuzzy").length,
       items: results,
+    });
+
+    logActivity({
+      action: "inventory_matched", entity_type: "sample",
+      entity_id: sampleId, entity_name: sample.building_name || `Sample #${sampleId}`,
+      performed_by: (req.body || {}).user_id || null,
+      performed_by_name: (req.body || {}).user_name || null,
+      project_id: sample.project_id,
     });
   } catch (err) {
     console.error("Sample match error:", err);

@@ -245,7 +245,12 @@ router.post("/create-sample", async (req, res) => {
 router.get("/", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM samples ORDER BY created_at DESC");
-    res.json(result.rows);
+    const samples = result.rows.map(s => {
+      const items = Array.isArray(s.item_description) ? s.item_description : [];
+      const linked = items.length > 0 && items.every(i => i.inventory_id);
+      return { ...s, linked };
+    });
+    res.json(samples);
   } catch (error) {
     console.error("Error fetching samples:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -278,7 +283,12 @@ router.get("/project/:projectId", async (req, res) => {
       "SELECT * FROM samples WHERE project_id = $1 ORDER BY created_at DESC",
       [req.params.projectId]
     );
-    res.json(result.rows);
+    const samples = result.rows.map(s => {
+      const items = Array.isArray(s.item_description) ? s.item_description : [];
+      const linked = items.length > 0 && items.every(i => i.inventory_id);
+      return { ...s, linked };
+    });
+    res.json(samples);
   } catch (error) {
     console.error("Error fetching samples by project:", error);
     res.status(500).json({ error: "Internal Server Error" });
