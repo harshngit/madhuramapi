@@ -5,8 +5,9 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const nodemailer = require("nodemailer");
-const { generatePRPdf } = require("../utils/pr_pdf");
+const { generatePrPdf } = require("../utils/pr_pdf");
 const { logActivity } = require("./dashboard");
+const { generateEmailTemplate, formatCurrency, formatDate } = require("../utils/emailHelper");
 const { recordMovement } = require("./inventory"); // ← stock-out helper
 
 const uploadDir = path.join(__dirname, "../../uploads/pr");
@@ -757,12 +758,29 @@ router.post("/:id/send-email", async (req, res) => {
       auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
     });
 
-    const htmlBody = `
-      <h1>Purchase Requisition PR #${pr.pr_id}</h1>
-      <p>${message || "Please find the attached Purchase Requisition."}</p>
-      <p><b>Project:</b> ${pr.project_name}</p>
-      <p><b>Date:</b> ${new Date(pr.date).toLocaleDateString("en-IN")}</p>
-    `;
+    // Prepare dynamic content for email template
+    const infoItems = [
+      { label: "PR ID", value: `PR #${pr.pr_id}` },
+      { label: "Date", value: formatDate(pr.date) },
+      { label: "Project", value: pr.project_name },
+      { label: "Location", value: pr.location },
+      { label: "Work Order No", value: pr.workorder_no },
+      { label: "Urgency", value: pr.urgency },
+      { label: "Approved By", value: pr.approved_by },
+      { label: "MIR No", value: pr.mirno }
+    ].filter(i => i.value);
+
+    const tableHeaders = ["Description", "Unit", "Req Qty", "Make", "Place of Utilisation"];
+    const prItems = Array.isArray(pr.items) ? pr.items : [];
+
+    const htmlBody = generateEmailTemplate({
+      title: `Purchase Requisition PR #${pr.pr_id}`,
+      message: message || "Please find the details of the Purchase Requisition below and in the attachment.",
+      infoItems,
+      items: prItems,
+      tableHeaders,
+      accentColor: "#4c8ac7"
+    });
 
     const nodemailerAttachments = [];
     if (Array.isArray(attachments)) {

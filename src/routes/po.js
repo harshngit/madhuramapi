@@ -7,6 +7,7 @@ const fs = require("fs");
 const nodemailer = require("nodemailer");
 const { generatePOPdf } = require("../utils/po_pdf");
 const { logActivity } = require("./dashboard"); // adjust path if needed
+const { generateEmailTemplate, formatCurrency, formatDate } = require("../utils/emailHelper");
 
 
 // Ensure upload directory exists
@@ -765,7 +766,13 @@ router.post("/:id/send-email", async (req, res) => {
   if (!to) return res.status(400).json({ error: "Recipient email is required." });
 
   try {
-    const result = await pool.query("SELECT * FROM pos WHERE po_id = $1", [id]);
+    const result = await pool.query(
+      `SELECT po.*, p.project_name 
+       FROM pos po 
+       LEFT JOIN projects p ON p.project_id = po.project_id
+       WHERE po.po_id = $1`, 
+      [id]
+    );
     if (result.rows.length === 0) return res.status(404).json({ error: "PO not found" });
     const po = result.rows[0];
 
@@ -776,13 +783,81 @@ router.post("/:id/send-email", async (req, res) => {
       auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
     });
 
-    // Simple HTML body for PO
-    const htmlBody = `
-      <h1>Purchase Order PO #${po.order_no || id}</h1>
-      <p>${message || "Please find the attached Purchase Order."}</p>
-      <p><b>Vendor:</b> ${po.vendor_name}</p>
-      <p><b>Total Amount:</b> ${po.total_amount}</p>
+    // Prepare dynamic content for email template
+    const infoItems = [
+      { label: "Order No", value: po.order_no || id },
+      { label: "PO Date", value: formatDate(po.po_date) },
+      { label: "Vendor", value: po.vendor_name },
+      { label: "Project", value: po.project_name },
+      { label: "Site", value: po.site },
+      { label: "Contact Person", value: po.contact_person },
+      { label: "Indent No", value: po.indent_no },
+      { label: "Indent Date", value: formatDate(po.indent_date) },
+      { label: "Vendor Address", value: po.vendor_address },
+      { label: "Delivery", value: po.delivery },
+      { label: "Payment", value: po.payment }
+    ].filter(i => i.value);
+
+    const tableHeaders = ["Sr No", "Description", "Qty", "UOM", "Rate", "Amount"];
+    
+    // items is already a JSONB column in pos table
+    const poItems = Array.isArray(po.items) ? po.items : [];
+
+    let totalSection = `
+      <div class="total-row">
+        <div class="total-label">Subtotal:</div>
+        <div class="total-value">${formatCurrency(po.after_discount || 0)}</div>
+      </div>
     `;
+
+    if (po.discount_amount > 0) {
+      totalSection = `
+        <div class="total-row">
+          <div class="total-label">Discount:</div>
+          <div class="total-value">-${formatCurrency(po.discount_amount)}</div>
+        </div>
+        ${totalSection}
+      `;
+    }
+
+    if (po.cgst_amount > 0 || po.sgst_amount > 0) {
+      totalSection += `
+        <div class="total-row">
+          <div class="total-label">CGST (${po.cgst}%):</div>
+          <div class="total-value">${formatCurrency(po.cgst_amount)}</div>
+        </div>
+        <div class="total-row">
+          <div class="total-label">SGST (${po.sgst}%):</div>
+          <div class="total-value">${formatCurrency(po.sgst_amount)}</div>
+        </div>
+      `;
+    }
+
+    totalSection += `
+      <div class="total-row grand-total">
+        <div class="total-label">Total Amount:</div>
+        <div class="total-value">${formatCurrency(po.total_amount)}</div>
+      </div>
+    `;
+
+    if (po.notes) {
+      totalSection += `
+        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px dashed #ddd; font-size: 13px; color: #666;">
+          <strong>Notes:</strong><br/>
+          ${po.notes}
+        </div>
+      `;
+    }
+
+    const htmlBody = generateEmailTemplate({
+      title: `Purchase Order PO #${po.order_no || id}`,
+      message: message || "Please find the details of the Purchase Order below and in the attachment.",
+      infoItems,
+      items: poItems,
+      tableHeaders,
+      totalSection,
+      accentColor: "#4c8ac7"
+    });
 
     const nodemailerAttachments = [];
     if (Array.isArray(attachments)) {
