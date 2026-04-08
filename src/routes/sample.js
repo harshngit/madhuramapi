@@ -132,7 +132,13 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *               project_id:       { type: integer }
  *               building_name:    { type: string }
  *               site_name:        { type: string }
- *               location:         { type: object }
+ *               location:         
+ *                 type: object
+ *                 properties:
+ *                   floor: { type: string }
+ *                   block: { type: string }
+ *                   wing: { type: string }
+ *                   cooordinates: { type: string }
  *               work_done:        { type: string }
  *               item_description:
  *                 type: array
@@ -309,6 +315,36 @@ router.get("/project/:projectId", async (req, res) => {
  *         name: id
  *         required: true
  *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               building_name:    { type: string }
+ *               site_name:        { type: string }
+ *               location:         
+ *                 type: object
+ *                 properties:
+ *                   floor: { type: string }
+ *                   block: { type: string }
+ *                   wing: { type: string }
+ *                   cooordinates: { type: string }
+ *               work_done:        { type: string }
+ *               item_description:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     sr_no:         { type: integer }
+ *                     description:   { type: string }
+ *                     quantity:      { type: number }
+ *                     value:         { type: number }
+ *                     inventory_id:  { type: integer, description: "Link to inventory item" }
+ *                     issued_qty:    { type: number,  description: "Qty to deduct from inventory (default: quantity)" }
+ *               add_fields:       { type: array }
+ *               sample_file:      { type: string }
  *     responses:
  *       200:
  *         description: Sample details
