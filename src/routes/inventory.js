@@ -893,7 +893,8 @@ router.put("/:id", async (req, res) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;
-    const { brand, name, price, stockin, billing, units, width, height, user_id, user_name } = req.body;
+    const body = req.body || {};
+    const { brand, name, price, stockin, billing, units, width, height, user_id, user_name } = body;
 
     const oldRes = await client.query(
       "SELECT * FROM inventories WHERE inventory_id = $1",
@@ -927,8 +928,8 @@ router.put("/:id", async (req, res) => {
     const changed_fields = {};
     const fields = ["brand", "name", "price", "stockin", "billing", "units", "width", "height"];
     fields.forEach(f => {
-      if (req.body[f] !== undefined && req.body[f] !== old[f]) {
-        changed_fields[f] = { from: old[f], to: req.body[f] };
+      if (body[f] !== undefined && body[f] !== old[f]) {
+        changed_fields[f] = { from: old[f], to: body[f] };
       }
     });
 
@@ -957,7 +958,7 @@ router.put("/:id", async (req, res) => {
       entity_id: id, entity_name: updated.name,
       performed_by:      user_id || null,
       performed_by_name: user_name || null,
-      meta: { updates: req.body },
+      meta: { updates: body },
     });
   } catch (err) {
     await client.query("ROLLBACK");
@@ -974,7 +975,7 @@ router.put("/:id", async (req, res) => {
 router.patch("/:id/stockin", async (req, res) => {
   try {
     const { id }      = req.params;
-    const { stockin } = req.body;
+    const { stockin } = req.body || {};
 
     if (typeof stockin !== "boolean")
       return res.status(400).json({ error: "stockin must be a boolean" });
