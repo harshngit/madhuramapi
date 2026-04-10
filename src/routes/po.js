@@ -6,9 +6,9 @@ const path = require("path");
 const fs = require("fs");
 const nodemailer = require("nodemailer");
 const { generatePOPdf } = require("../utils/po_pdf");
-const { logActivity } = require("./dashboard"); // adjust path if needed
+const { logActivity } = require("./dashboard");
 const { generateEmailTemplate, formatCurrency, formatDate } = require("../utils/emailHelper");
-
+const { recordMovement } = require("./inventory"); // ← NEW: needed for inventory restore on delete
 
 // Ensure upload directory exists
 const uploadDir = path.join(__dirname, "../../uploads/po");
@@ -22,7 +22,6 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    // Keep original extension, prepend timestamp for uniqueness
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     cb(null, uniqueSuffix + path.extname(file.originalname));
   },
@@ -71,7 +70,6 @@ router.post("/upload", upload.single("file"), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded" });
   }
-  // Return the relative path to be stored in the database
   const filePath = `/uploads/po/${req.file.filename}`;
   res.json({ filePath });
 
@@ -160,6 +158,12 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *                       type: number
  *                     remark:
  *                       type: string
+ *                     inventory_id:
+ *                       type: integer
+ *                       description: Link to inventories table (optional)
+ *                     issued_qty:
+ *                       type: number
+ *                       description: Qty deducted from inventory when PO was saved
  *               discount:
  *                 type: number
  *               discount_amount:
@@ -272,18 +276,18 @@ router.post("/", async (req, res) => {
     );
     res.status(201).json(result.rows[0]);
     logActivity({
-  action: "created",
-  entity_type: "po",
-  entity_id: result.rows[0].po_id,
-  entity_name: `PO #${result.rows[0].po_id}`,
-  performed_by: req.body.created_by || null,
-  performed_by_name: req.body.created_by_name || null,
-  meta: {
-    project_id: result.rows[0].project_id,
-    sample_id: result.rows[0].sample_id,
-    company_name: result.rows[0].company_name,
-  },
-});
+      action: "created",
+      entity_type: "po",
+      entity_id: result.rows[0].po_id,
+      entity_name: `PO #${result.rows[0].po_id}`,
+      performed_by: req.body.created_by || null,
+      performed_by_name: req.body.created_by_name || null,
+      meta: {
+        project_id: result.rows[0].project_id,
+        sample_id: result.rows[0].sample_id,
+        company_name: result.rows[0].company_name,
+      },
+    });
   } catch (error) {
     console.error("Error creating PO:", error);
     res.status(500).json({ error: error.message });
@@ -532,7 +536,6 @@ router.put("/:id", async (req, res) => {
     }
     res.json(result.rows[0]);
 
-    // Log Activity
     logActivity({
       action: "updated",
       entity_type: "po",
@@ -553,7 +556,7 @@ router.put("/:id", async (req, res) => {
  * @swagger
  * /api/po/{id}:
  *   delete:
- *     summary: Delete a PO
+ *     summary: Delete a PO (restores any linked inventory items back to stock)
  *     tags: [PO]
  *     parameters:
  *       - in: path
@@ -564,7 +567,7 @@ router.put("/:id", async (req, res) => {
  *         description: PO ID
  *     responses:
  *       200:
- *         description: PO deleted successfully
+ *         description: PO deleted successfully; inventory restored
  *       404:
  *         description: PO not found
  *       500:
@@ -572,24 +575,79 @@ router.put("/:id", async (req, res) => {
  */
 router.delete("/:id", async (req, res) => {
   const { id } = req.params;
+  const client = await pool.connect();
   try {
-    const result = await pool.query("DELETE FROM pos WHERE po_id = $1 RETURNING *", [id]);
-    if (result.rows.length === 0) {
+    await client.query("BEGIN");
+
+    // ── Step 1: fetch the PO so we have items and project info ──────────────
+    const poRes = await client.query("SELECT * FROM pos WHERE po_id = $1", [id]);
+    if (poRes.rows.length === 0) {
+      await client.query("ROLLBACK");
       return res.status(404).json({ error: "PO not found" });
     }
-    res.json({ message: "PO deleted successfully" });
+    const po = poRes.rows[0];
+
+    // ── Step 2: restore inventory for any items that have inventory_id ───────
+    // PO items are stored as JSONB in pos.items column.
+    // Each item may optionally carry { inventory_id, issued_qty, inventory_issued }.
+    const poItems = Array.isArray(po.items) ? po.items : [];
+    const restoredItems = [];
+
+    for (const item of poItems) {
+      if (!item.inventory_id) continue; // item not linked to inventory → skip
+      if (!item.inventory_issued) continue; // never actually deducted → skip
+
+      const qty = Number(item.issued_qty ?? item.qty ?? 0);
+      if (qty <= 0) continue;
+
+      await recordMovement(client, {
+        inventory_id:      item.inventory_id,
+        movement_type:     "in",                       // stock back IN
+        quantity:          qty,
+        source_type:       "po",
+        source_id:         Number(id),
+        source_ref:        po.order_no || `PO #${id}`,
+        project_id:        po.project_id,
+        project_name:      req.body.project_name || null,
+        notes:             `Reversed: PO #${id} (${po.order_no || ""}) deleted`,
+        performed_by:      req.body.user_id || null,
+        performed_by_name: req.body.user_name || null,
+      });
+
+      restoredItems.push({ inventory_id: item.inventory_id, qty_restored: qty });
+    }
+
+    // ── Step 3: delete the PO ─────────────────────────────────────────────────
+    await client.query("DELETE FROM pos WHERE po_id = $1", [id]);
+
+    await client.query("COMMIT");
+
+    res.json({
+      message: "PO deleted successfully",
+      inventory_restored: restoredItems.length > 0,
+      restored_items: restoredItems,
+    });
+
     logActivity({
-  action: "deleted",
-  entity_type: "po",
-  entity_id: id,
-  entity_name: `PO #${id}`,
-  performed_by: null,
-  performed_by_name: null,
-});
+      action: "deleted",
+      entity_type: "po",
+      entity_id: id,
+      entity_name: `PO #${id}`,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: po.project_id,
+      meta: {
+        order_no: po.order_no,
+        inventory_restored: restoredItems,
+      },
+    });
 
   } catch (error) {
+    await client.query("ROLLBACK");
     console.error("Error deleting PO:", error);
     res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -627,18 +685,14 @@ router.delete("/:id", async (req, res) => {
 router.get("/:id/pdf", async (req, res) => {
   const { id } = req.params;
   try {
-    // 1. Fetch PO from DB
     const result = await pool.query("SELECT * FROM pos WHERE po_id = $1", [id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "PO not found" });
     }
 
     const po = result.rows[0];
-
-    // 2. Generate PDF buffer
     const pdfBuffer = await generatePOPdf(po);
 
-    // 3. Send as downloadable PDF
     const filename = `PO_${po.order_no || id}_${Date.now()}.pdf`;
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
@@ -793,7 +847,6 @@ router.post("/:id/send-email", async (req, res) => {
       auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
     });
 
-    // Prepare dynamic content for email template
     const infoItems = [
       { label: "Order No", value: po.order_no || id },
       { label: "PO Date", value: formatDate(po.po_date) },
@@ -809,8 +862,6 @@ router.post("/:id/send-email", async (req, res) => {
     ].filter(i => i.value);
 
     const tableHeaders = ["Sr No", "Description", "Qty", "UOM", "Rate", "Amount"];
-    
-    // items is already a JSONB column in pos table
     const poItems = Array.isArray(po.items) ? po.items : [];
 
     let totalSection = `

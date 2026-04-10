@@ -4,9 +4,13 @@ const cors = require("cors");
 const http = require("http");
 const { WebSocketServer } = require("ws");
 
-const swaggerUi = require("swagger-ui-express");
+const swaggerUi   = require("swagger-ui-express");
 const swaggerSpec = require("./swagger");
 
+// ─── Middleware ───────────────────────────────────────────────────────────────
+const { apiLogger } = require("./middleware/apiLogger"); // ← NEW: live API logger
+
+// ─── Routes ──────────────────────────────────────────────────────────────────
 const authRoutes             = require("./routes/auth");
 const projectRoutes          = require("./routes/projects");
 const compressionRoutes      = require("./routes/compression");
@@ -27,7 +31,8 @@ const attendanceRoutes       = require("./routes/attendance");
 const quotationRoutes        = require("./routes/quotation");
 const bulkInventoryRoutes    = require("./routes/vendor_price_list_bulk_inventory");
 const traceRoutes            = require("./routes/inventory_trace");
-const accessControlRoutes    = require("./routes/access_control"); // ← NEW
+const accessControlRoutes    = require("./routes/access_control");
+const apiLogsRoutes          = require("./routes/api_logs"); // ← NEW
 
 // Dashboard + Activity + WebSocket
 const { router: dashboardRouter, wsHandler } = require("./routes/dashboard");
@@ -35,12 +40,9 @@ const { router: dashboardRouter, wsHandler } = require("./routes/dashboard");
 const app = express();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ✅ FIX: Increase JSON payload limit from default 100kb → 50mb
+// ✅ Increase JSON payload limit from default 100kb → 50mb
 // This resolves "PayloadTooLargeError" when submitting large quotations
 // with many items (like the Oakwood / Lodha BOQ with 300+ line items).
-//
-// The default limit is 100kb which is easily exceeded by large BOQ JSON payloads.
-// Set to 50mb to safely accommodate even very large quotation payloads.
 // ─────────────────────────────────────────────────────────────────────────────
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -57,10 +59,17 @@ app.use(
 // Swagger
 app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// Health check
+// Health check (not logged — see apiLogger skip list)
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ✅ NEW: Live API request logger
+// Must be registered AFTER body parsers and BEFORE route handlers so the
+// middleware can read req.body and intercept res.json / res.send correctly.
+// ─────────────────────────────────────────────────────────────────────────────
+app.use(apiLogger);
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
 app.use("/api/auth",              authRoutes);
@@ -81,10 +90,11 @@ app.use("/api/vendor-price-list", vendorPriceListRoutes);
 app.use("/api/pr",                prRoutes);
 app.use("/api/attendance",        attendanceRoutes);
 app.use("/api/quotations",        quotationRoutes);
-app.use("/api/quotation",         quotationRoutes); // Supports both singular and plural
+app.use("/api/quotation",         quotationRoutes); // supports both singular and plural
 app.use("/api/vendor-price-list", bulkInventoryRoutes);
 app.use("/api/inventory-trace",   traceRoutes);
-app.use("/api/access",            accessControlRoutes); // ← NEW
+app.use("/api/access",            accessControlRoutes);
+app.use("/api/logs",              apiLogsRoutes); // ← NEW: live API log viewer
 
 // Dashboard routes
 app.use("/api/dashboard", dashboardRouter);

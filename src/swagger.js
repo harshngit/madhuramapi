@@ -15,7 +15,7 @@ const options = {
 				description: "Local server",
 			},
 			{
-				url: "https://api.festmate.in",
+				url: "https://api.madhuram.enterprises",
 				description: "Production server",
 			},
 		],

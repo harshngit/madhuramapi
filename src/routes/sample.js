@@ -5,7 +5,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const { logActivity } = require("./dashboard");
-const { recordMovement } = require("./inventory"); // ← stock-out helper
+const { recordMovement } = require("./inventory"); // stock-out AND stock-in helper
 
 const uploadDir = path.join(__dirname, "../../uploads/sample");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -315,36 +315,6 @@ router.get("/project/:projectId", async (req, res) => {
  *         name: id
  *         required: true
  *         schema: { type: integer }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               building_name:    { type: string }
- *               site_name:        { type: string }
- *               location:         
- *                 type: object
- *                 properties:
- *                   floor: { type: string }
- *                   block: { type: string }
- *                   wing: { type: string }
- *                   cooordinates: { type: string }
- *               work_done:        { type: string }
- *               item_description:
- *                 type: array
- *                 items:
- *                   type: object
- *                   properties:
- *                     sr_no:         { type: integer }
- *                     description:   { type: string }
- *                     quantity:      { type: number }
- *                     value:         { type: number }
- *                     inventory_id:  { type: integer, description: "Link to inventory item" }
- *                     issued_qty:    { type: number,  description: "Qty to deduct from inventory (default: quantity)" }
- *               add_fields:       { type: array }
- *               sample_file:      { type: string }
  *     responses:
  *       200:
  *         description: Sample details
@@ -471,42 +441,102 @@ router.put("/:id", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DELETE /api/sample/:id  (unchanged)
+// DELETE /api/sample/:id
+//
+// FIX: Now restores inventory stock for any item_description entries that
+// had inventory_id + inventory_issued = true when the sample was deleted.
+// Each restored movement is recorded in inventory_movements AND
+// inventory_history (via recordMovement → logInventoryHistory).
 // ─────────────────────────────────────────────────────────────────────────────
 router.delete("/:id", async (req, res) => {
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
-      "DELETE FROM samples WHERE sample_id = $1 RETURNING *",
+    await client.query("BEGIN");
+
+    // ── Step 1: fetch the sample so we have item_description ─────────────────
+    const sampleRes = await client.query(
+      "SELECT * FROM samples WHERE sample_id = $1",
       [req.params.id]
     );
-    if (result.rows.length === 0)
+    if (sampleRes.rows.length === 0) {
+      await client.query("ROLLBACK");
       return res.status(404).json({ error: "Sample not found" });
+    }
+    const sample = sampleRes.rows[0];
 
-    res.json({ message: "Sample deleted" });
+    // ── Step 2: restore inventory for items that were issued ──────────────────
+    // sample.item_description is JSONB — Postgres returns it as a JS array.
+    const items = Array.isArray(sample.item_description) ? sample.item_description : [];
+    const restoredItems = [];
+
+    for (const item of items) {
+      if (!item.inventory_id) continue;       // not linked to inventory → skip
+      if (!item.inventory_issued) continue;   // was never deducted → skip
+
+      const qty = Number(item.issued_qty ?? item.quantity ?? 0);
+      if (qty <= 0) continue;
+
+      await recordMovement(client, {
+        inventory_id:      item.inventory_id,
+        movement_type:     "in",              // stock back IN
+        quantity:          qty,
+        source_type:       "sample",
+        source_id:         Number(req.params.id),
+        source_ref:        sample.building_name || `Sample #${req.params.id}`,
+        project_id:        sample.project_id,
+        project_name:      req.body.project_name || null,
+        notes:             `Reversed: Sample #${req.params.id} (${sample.building_name || ""}) deleted`,
+        performed_by:      req.body.user_id || null,
+        performed_by_name: req.body.user_name || null,
+      });
+
+      restoredItems.push({ inventory_id: item.inventory_id, qty_restored: qty });
+    }
+
+    // ── Step 3: delete the sample ─────────────────────────────────────────────
+    await client.query(
+      "DELETE FROM samples WHERE sample_id = $1",
+      [req.params.id]
+    );
+
+    await client.query("COMMIT");
+
+    res.json({
+      message: "Sample deleted",
+      inventory_restored: restoredItems.length > 0,
+      restored_items: restoredItems,
+    });
 
     logActivity({
       action: "deleted", entity_type: "sample",
       entity_id: req.params.id,
-      entity_name: result.rows[0].building_name || `Sample #${req.params.id}`,
+      entity_name: sample.building_name || `Sample #${req.params.id}`,
       performed_by: req.body.user_id || null,
       performed_by_name: req.body.user_name || null,
-      project_id: result.rows[0].project_id,
-      meta: {},
+      project_id: sample.project_id,
+      meta: {
+        inventory_restored: restoredItems,
+      },
     });
   } catch (error) {
+    await client.query("ROLLBACK");
     console.error("Error deleting sample:", error);
     res.status(500).json({ error: "Internal Server Error" });
+  } finally {
+    client.release();
   }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DELETE /api/sample/project/:projectId
+//
+// FIX: Also restores inventory for all samples under the project.
 // ─────────────────────────────────────────────────────────────────────────────
 /**
  * @swagger
  * /api/sample/project/{projectId}:
  *   delete:
- *     summary: Delete all samples associated with a project_id
+ *     summary: Delete all samples associated with a project_id (restores inventory)
  *     tags: [Sample]
  *     parameters:
  *       - in: path
@@ -515,21 +545,69 @@ router.delete("/:id", async (req, res) => {
  *         schema: { type: integer }
  *     responses:
  *       200:
- *         description: Samples deleted successfully
+ *         description: Samples deleted successfully; inventory restored
  *       500:
  *         description: Server error
  */
 router.delete("/project/:projectId", async (req, res) => {
+  const client = await pool.connect();
   try {
+    await client.query("BEGIN");
+
     const { projectId } = req.params;
-    const result = await pool.query(
-      "DELETE FROM samples WHERE project_id = $1 RETURNING *",
+
+    // Fetch all samples for this project
+    const samplesRes = await client.query(
+      "SELECT * FROM samples WHERE project_id = $1",
       [projectId]
     );
 
+    const allRestoredItems = [];
+
+    // Restore inventory for each sample's issued items
+    for (const sample of samplesRes.rows) {
+      const items = Array.isArray(sample.item_description) ? sample.item_description : [];
+      for (const item of items) {
+        if (!item.inventory_id) continue;
+        if (!item.inventory_issued) continue;
+        const qty = Number(item.issued_qty ?? item.quantity ?? 0);
+        if (qty <= 0) continue;
+
+        await recordMovement(client, {
+          inventory_id:      item.inventory_id,
+          movement_type:     "in",
+          quantity:          qty,
+          source_type:       "sample",
+          source_id:         sample.sample_id,
+          source_ref:        sample.building_name || `Sample #${sample.sample_id}`,
+          project_id:        Number(projectId),
+          project_name:      req.body.project_name || null,
+          notes:             `Reversed: Sample #${sample.sample_id} deleted (project #${projectId} bulk delete)`,
+          performed_by:      req.body.user_id || null,
+          performed_by_name: req.body.user_name || null,
+        });
+
+        allRestoredItems.push({
+          sample_id: sample.sample_id,
+          inventory_id: item.inventory_id,
+          qty_restored: qty,
+        });
+      }
+    }
+
+    // Now delete all samples for the project
+    const result = await client.query(
+      "DELETE FROM samples WHERE project_id = $1 RETURNING sample_id",
+      [projectId]
+    );
+
+    await client.query("COMMIT");
+
     res.json({
       message: `${result.rowCount} samples deleted for project_id ${projectId}`,
-      deleted_count: result.rowCount
+      deleted_count: result.rowCount,
+      inventory_restored: allRestoredItems.length > 0,
+      restored_items: allRestoredItems,
     });
 
     logActivity({
@@ -540,11 +618,14 @@ router.delete("/project/:projectId", async (req, res) => {
       performed_by: req.body.user_id || null,
       performed_by_name: req.body.user_name || null,
       project_id: projectId,
-      meta: { deleted_count: result.rowCount },
+      meta: { deleted_count: result.rowCount, inventory_restored: allRestoredItems },
     });
   } catch (error) {
+    await client.query("ROLLBACK");
     console.error("Error deleting samples by project:", error);
     res.status(500).json({ error: "Internal Server Error" });
+  } finally {
+    client.release();
   }
 });
 
