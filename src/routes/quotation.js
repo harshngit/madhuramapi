@@ -1263,7 +1263,6 @@ router.delete("/:id", async (req, res) => {
     }
     const { project_name } = check.rows[0];
 
-    await client.query("DELETE FROM quotation_drawings WHERE quotation_id = $1", [id]);
     await client.query("DELETE FROM quotation_items WHERE quotation_id = $1", [id]);
     await client.query("DELETE FROM quotations WHERE id = $1", [id]);
     await client.query("COMMIT");
