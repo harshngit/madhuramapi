@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS projects (
     flats INTEGER,
     refuge_flat INTEGER,
     toilets INTEGER,
+    location_data JSONB DEFAULT '{"latitude": null, "longitude": null, "radius": null, "location_name": null}'::jsonb,
     user_id UUID REFERENCES auth_users(user_id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

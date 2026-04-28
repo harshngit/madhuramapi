@@ -103,6 +103,20 @@ const uploadMiddleware = (req, res, next) => {
  *           type: integer
  *         toilets:
  *           type: integer
+ *         location_data:
+ *           type: object
+ *           properties:
+ *             latitude:
+ *               type: number
+ *               format: double
+ *             longitude:
+ *               type: number
+ *               format: double
+ *             radius:
+ *               type: number
+ *               format: double
+ *             location_name:
+ *               type: string
  *         user_id:
  *           type: string
  *           format: uuid
@@ -174,6 +188,17 @@ const uploadMiddleware = (req, res, next) => {
  *               user_id:
  *                 type: string
  *                 format: uuid
+ *               location_latitude:
+ *                 type: number
+ *                 format: double
+ *               location_longitude:
+ *                 type: number
+ *                 format: double
+ *               location_radius:
+ *                 type: number
+ *                 format: double
+ *               location_name:
+ *                 type: string
  *     responses:
  *       201:
  *         description: Project created successfully
@@ -201,6 +226,10 @@ router.post("/", uploadMiddleware, async (req, res) => {
       refuge_flat,
       toilets,
       user_id,
+      location_latitude,
+      location_longitude,
+      location_radius,
+      location_name,
     } = req.body;
 
     const userIdValue = user_id === undefined || user_id === null || String(user_id).trim() === "" ? null : String(user_id).trim();
@@ -235,12 +264,19 @@ router.post("/", uploadMiddleware, async (req, res) => {
       try { mlManagementArr = JSON.parse(ml_management); } catch (e) { mlManagementArr = [ml_management]; }
     }
 
+    const locationData = {
+      latitude: location_latitude ? parseFloat(location_latitude) : null,
+      longitude: location_longitude ? parseFloat(location_longitude) : null,
+      radius: location_radius ? parseFloat(location_radius) : null,
+      location_name: location_name || null,
+    };
+
     // Insert into the database
     const result = await pool.query(
       `INSERT INTO projects (
         project_name, project_startdate, client_name, location, floor, estimate_value, wo_number,
-        work_order_file, pr_po_tracking, samples, mas_file, ml_management, flats, refuge_flat, toilets, user_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING *`,
+        work_order_file, pr_po_tracking, samples, mas_file, ml_management, flats, refuge_flat, toilets, user_id, location_data
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *`,
       [
         project_name,
         project_startdate,
@@ -258,6 +294,7 @@ router.post("/", uploadMiddleware, async (req, res) => {
         refuge_flat || null,
         toilets || null,
         userIdValue,
+        JSON.stringify(locationData),
       ]
     );
 
@@ -415,6 +452,23 @@ router.get("/:id", async (req, res) => {
  *                 type: array
  *                 items:
  *                   type: string
+ *               flats:
+ *                 type: integer
+ *               refuge_flat:
+ *                 type: integer
+ *               toilets:
+ *                 type: integer
+ *               location_latitude:
+ *                 type: number
+ *                 format: double
+ *               location_longitude:
+ *                 type: number
+ *                 format: double
+ *               location_radius:
+ *                 type: number
+ *                 format: double
+ *               location_name:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Project updated successfully
@@ -441,6 +495,13 @@ router.put("/:id", uploadMiddleware, async (req, res) => {
       pr_po_tracking,
       samples,
       ml_management,
+      flats,
+      refuge_flat,
+      toilets,
+      location_latitude,
+      location_longitude,
+      location_radius,
+      location_name,
     } = req.body;
 
     const work_order_file = req.files && req.files["work_order_file"] ? req.files["work_order_file"][0].filename : null;
@@ -461,6 +522,13 @@ router.put("/:id", uploadMiddleware, async (req, res) => {
       try { mlManagementArr = JSON.parse(ml_management); } catch (e) { mlManagementArr = [ml_management]; }
     }
 
+    const locationData = {
+      latitude: location_latitude ? parseFloat(location_latitude) : null,
+      longitude: location_longitude ? parseFloat(location_longitude) : null,
+      radius: location_radius ? parseFloat(location_radius) : null,
+      location_name: location_name || null,
+    };
+
     const result = await pool.query(
       `UPDATE projects SET
         project_name = $1,
@@ -475,8 +543,12 @@ router.put("/:id", uploadMiddleware, async (req, res) => {
         ml_management = $10,
         work_order_file = COALESCE($11, work_order_file),
         mas_file = COALESCE($12, mas_file),
+        flats = $13,
+        refuge_flat = $14,
+        toilets = $15,
+        location_data = $16,
         updated_at = CURRENT_TIMESTAMP
-      WHERE project_id = $13
+      WHERE project_id = $17
       RETURNING *`,
       [
         project_name,
@@ -491,6 +563,10 @@ router.put("/:id", uploadMiddleware, async (req, res) => {
         mlManagementArr,
         work_order_file,
         mas_file,
+        flats || null,
+        refuge_flat || null,
+        toilets || null,
+        JSON.stringify(locationData),
         id
       ]
     );
