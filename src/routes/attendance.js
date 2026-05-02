@@ -144,7 +144,7 @@ router.post("/upload", upload.single("file"), (req, res) => {
  * @swagger
  * /api/attendance:
  *   post:
- *     summary: Create a new attendance record
+ *     summary: Create a new attendance record (check-in)
  *     tags: [Attendance]
  *     requestBody:
  *       required: true
@@ -153,33 +153,22 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *           schema:
  *             type: object
  *             properties:
- *               photo_selfie:
- *                 type: string
- *               photo_site:
- *                 type: string
- *               location:
- *                 type: string
- *               latitude:
- *                 type: number
- *               longitude:
- *                 type: number
- *               user_name:
- *                 type: string
- *               phone_number:
- *                 type: string
- *               date:
- *                 type: string
- *                 format: date
- *               day:
- *                 type: string
- *               project_id:
- *                 type: integer
- *               user_id:
- *                 type: string
- *                 format: uuid
+ *               photo_selfie: { type: string }
+ *               photo_site: { type: string }
+ *               location: { type: string }
+ *               latitude: { type: number }
+ *               longitude: { type: number }
+ *               user_name: { type: string }
+ *               phone_number: { type: string }
+ *               date: { type: string, format: date }
+ *               day: { type: string }
+ *               project_id: { type: integer }
+ *               user_id: { type: string, format: uuid }
  *     responses:
  *       201:
  *         description: Attendance record created
+ *       403:
+ *         description: User has reached 15 absent limit — attendance blocked
  *       500:
  *         description: Server error
  */
@@ -199,6 +188,22 @@ router.post("/", async (req, res) => {
       user_id,
     } = req.body;
 
+    // ─── BLOCK: Prevent check-in if user already has 15 absences ─────────────
+    const absentCountResult = await pool.query(
+      "SELECT COUNT(*) FROM attendance WHERE user_id = $1 AND status = 'absent'",
+      [user_id]
+    );
+    const absentCount = parseInt(absentCountResult.rows[0].count);
+
+    if (absentCount >= 15) {
+      return res.status(403).json({
+        error: "Attendance cannot be recorded. This user has reached the maximum limit of 15 absences.",
+        absent_count: absentCount,
+        user_id: user_id,
+      });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     // Fetch user's designated check-in time for lateness calculation
     const userResult = await pool.query(
       "SELECT check_in_time, role FROM auth_users WHERE user_id = $1",
@@ -209,15 +214,11 @@ router.post("/", async (req, res) => {
     if (userResult.rows.length > 0 && userResult.rows[0].role === 'labour' && userResult.rows[0].check_in_time) {
       const designatedCheckIn = userResult.rows[0].check_in_time;
       const now = new Date();
-      
-      // Parse HH:MM:SS
       const [desigH, desigM, desigS] = designatedCheckIn.split(':').map(Number);
       const designatedDate = new Date(now);
       designatedDate.setHours(desigH, desigM, desigS || 0, 0);
-
       if (now > designatedDate) {
-        const diffMs = now - designatedDate;
-        const diffMins = Math.floor(diffMs / 60000);
+        const diffMins = Math.floor((now - designatedDate) / 60000);
         if (diffMins > 0) {
           remark = `User is late by ${diffMins} minutes`;
         }
@@ -229,20 +230,8 @@ router.post("/", async (req, res) => {
         photo_selfie, photo_site, location, latitude, longitude,
         user_name, phone_number, date, day, project_id, user_id, status, remark
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending', $12) RETURNING *`,
-      [
-        photo_selfie,
-        photo_site,
-        location,
-        latitude,
-        longitude,
-        user_name,
-        phone_number,
-        date,
-        day,
-        project_id,
-        user_id,
-        remark,
-      ]
+      [photo_selfie, photo_site, location, latitude, longitude,
+       user_name, phone_number, date, day, project_id, user_id, remark]
     );
 
     res.status(201).json(result.rows[0]);
@@ -272,28 +261,18 @@ router.post("/", async (req, res) => {
  *       - in: query
  *         name: start_date
  *         schema: { type: string, format: date }
- *         description: Filter records from this date
  *       - in: query
  *         name: end_date
  *         schema: { type: string, format: date }
- *         description: Filter records up to this date
  *       - in: query
  *         name: status
  *         schema: { type: string }
- *         description: Filter by status (present/absent/pending)
  *       - in: query
  *         name: project_id
  *         schema: { type: integer }
- *         description: Filter by project ID
  *     responses:
  *       200:
  *         description: List of attendance records
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/Attendance'
  */
 router.get("/", async (req, res) => {
   try {
@@ -302,22 +281,10 @@ router.get("/", async (req, res) => {
     const values = [];
     let p = 1;
 
-    if (start_date) {
-      query += ` AND date >= $${p++}`;
-      values.push(start_date);
-    }
-    if (end_date) {
-      query += ` AND date <= $${p++}`;
-      values.push(end_date);
-    }
-    if (status) {
-      query += ` AND status = $${p++}`;
-      values.push(status);
-    }
-    if (project_id) {
-      query += ` AND project_id = $${p++}`;
-      values.push(project_id);
-    }
+    if (start_date) { query += ` AND date >= $${p++}`; values.push(start_date); }
+    if (end_date)   { query += ` AND date <= $${p++}`; values.push(end_date); }
+    if (status)     { query += ` AND status = $${p++}`; values.push(status); }
+    if (project_id) { query += ` AND project_id = $${p++}`; values.push(project_id); }
 
     query += " ORDER BY date DESC, created_at DESC";
     const result = await pool.query(query, values);
@@ -352,6 +319,224 @@ router.get("/today/present", async (req, res) => {
   }
 });
 
+// ─── HELPER: Build the three attendance lists for a given date/project ────────
+async function buildAttendanceSummary(date, project_id) {
+  const projectFilterSQL = project_id ? " AND a.project_id = $2" : "";
+
+  // Checked IN — no checkout yet
+  const checkedInResult = await pool.query(
+    `SELECT a.attendance_id, a.user_id, a.user_name, a.phone_number, a.project_id,
+            a.location, a.latitude, a.longitude,
+            a.photo_selfie, a.photo_site, a.status, a.remark,
+            a.created_at AS check_in_time
+     FROM attendance a
+     WHERE a.date = $1 AND a.check_out_time IS NULL${projectFilterSQL}
+     ORDER BY a.created_at ASC`,
+    project_id ? [date, project_id] : [date]
+  );
+
+  // Checked IN + OUT
+  const checkedOutResult = await pool.query(
+    `SELECT a.attendance_id, a.user_id, a.user_name, a.phone_number, a.project_id,
+            a.location, a.latitude, a.longitude,
+            a.photo_selfie, a.photo_site,
+            a.check_out_time, a.check_out_location, a.check_out_latitude, a.check_out_longitude,
+            a.check_out_photo_selfie, a.check_out_photo_site,
+            a.status, a.remark,
+            a.created_at AS check_in_time
+     FROM attendance a
+     WHERE a.date = $1 AND a.check_out_time IS NOT NULL${projectFilterSQL}
+     ORDER BY a.check_out_time ASC`,
+    project_id ? [date, project_id] : [date]
+  );
+
+  // Not checked in at all today
+  let notCheckedInQuery, notCheckedInValues;
+  if (project_id) {
+    notCheckedInQuery = `
+      SELECT DISTINCT u.user_id, u.username AS user_name, u.phone_number, u.role
+      FROM auth_users u
+      WHERE u.is_active = true
+        AND u.user_id NOT IN (
+          SELECT DISTINCT a.user_id FROM attendance a
+          WHERE a.date = $1 AND a.project_id = $2
+        )
+      ORDER BY u.username ASC`;
+    notCheckedInValues = [date, project_id];
+  } else {
+    notCheckedInQuery = `
+      SELECT u.user_id, u.username AS user_name, u.phone_number, u.role
+      FROM auth_users u
+      WHERE u.is_active = true
+        AND u.user_id NOT IN (
+          SELECT DISTINCT a.user_id FROM attendance a WHERE a.date = $1
+        )
+      ORDER BY u.username ASC`;
+    notCheckedInValues = [date];
+  }
+  const notCheckedInResult = await pool.query(notCheckedInQuery, notCheckedInValues);
+
+  return {
+    checked_in: checkedInResult.rows,
+    checked_out: checkedOutResult.rows,
+    not_checked_in: notCheckedInResult.rows,
+  };
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /api/attendance/today/summary:
+ *   get:
+ *     summary: Get today's check-in / check-out / not-checked-in lists with counts
+ *     tags: [Attendance]
+ *     parameters:
+ *       - in: query
+ *         name: project_id
+ *         schema: { type: integer }
+ *         description: Optional project filter
+ *     responses:
+ *       200:
+ *         description: >
+ *           Returns three lists: checked_in (checked in, not yet checked out),
+ *           checked_out (fully completed attendance), not_checked_in (users with
+ *           no attendance today). Each list has a corresponding count.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 date: { type: string }
+ *                 project_id: { type: integer, nullable: true }
+ *                 counts:
+ *                   type: object
+ *                   properties:
+ *                     checked_in: { type: integer }
+ *                     checked_out: { type: integer }
+ *                     not_checked_in: { type: integer }
+ *                 checked_in: { type: array, items: { type: object } }
+ *                 checked_out: { type: array, items: { type: object } }
+ *                 not_checked_in: { type: array, items: { type: object } }
+ */
+router.get("/today/summary", async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const { project_id } = req.query;
+    const { checked_in, checked_out, not_checked_in } =
+      await buildAttendanceSummary(today, project_id || null);
+
+    res.json({
+      date: today,
+      project_id: project_id || null,
+      counts: {
+        checked_in: checked_in.length,
+        checked_out: checked_out.length,
+        not_checked_in: not_checked_in.length,
+      },
+      checked_in,
+      checked_out,
+      not_checked_in,
+    });
+  } catch (error) {
+    console.error("Get today summary error:", error);
+    res.status(500).json({ error: "Failed to fetch today's attendance summary" });
+  }
+});
+
+/**
+ * @swagger
+ * /api/attendance/summary:
+ *   get:
+ *     summary: Get check-in / check-out / not-checked-in lists with counts for any date
+ *     tags: [Attendance]
+ *     parameters:
+ *       - in: query
+ *         name: date
+ *         required: true
+ *         schema: { type: string, format: date }
+ *         description: Date in YYYY-MM-DD format
+ *       - in: query
+ *         name: project_id
+ *         schema: { type: integer }
+ *         description: Optional project filter
+ *     responses:
+ *       200:
+ *         description: Attendance summary for the given date
+ *       400:
+ *         description: Missing date parameter
+ */
+router.get("/summary", async (req, res) => {
+  try {
+    const { date, project_id } = req.query;
+    if (!date) {
+      return res.status(400).json({ error: "date query parameter is required (YYYY-MM-DD)" });
+    }
+
+    const { checked_in, checked_out, not_checked_in } =
+      await buildAttendanceSummary(date, project_id || null);
+
+    res.json({
+      date,
+      project_id: project_id || null,
+      counts: {
+        checked_in: checked_in.length,
+        checked_out: checked_out.length,
+        not_checked_in: not_checked_in.length,
+      },
+      checked_in,
+      checked_out,
+      not_checked_in,
+    });
+  } catch (error) {
+    console.error("Get summary error:", error);
+    res.status(500).json({ error: "Failed to fetch attendance summary" });
+  }
+});
+
+/**
+ * @swagger
+ * /api/attendance/user/{user_id}/absent-count:
+ *   get:
+ *     summary: Get total absent count for a user (includes limit & eligibility flag)
+ *     tags: [Attendance]
+ *     parameters:
+ *       - in: path
+ *         name: user_id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Absent count details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 user_id: { type: string }
+ *                 absent_count: { type: integer }
+ *                 limit: { type: integer }
+ *                 can_mark_attendance: { type: boolean }
+ */
+router.get("/user/:user_id/absent-count", async (req, res) => {
+  try {
+    const { user_id } = req.params;
+    const result = await pool.query(
+      "SELECT COUNT(*) FROM attendance WHERE user_id = $1 AND status = 'absent'",
+      [user_id]
+    );
+    const absentCount = parseInt(result.rows[0].count);
+    res.json({
+      user_id,
+      absent_count: absentCount,
+      limit: 15,
+      can_mark_attendance: absentCount < 15,
+    });
+  } catch (error) {
+    console.error("Get absent count error:", error);
+    res.status(500).json({ error: "Failed to fetch absent count" });
+  }
+});
+
 /**
  * @swagger
  * /api/attendance/project/{project_id}:
@@ -362,9 +547,7 @@ router.get("/today/present", async (req, res) => {
  *       - in: path
  *         name: project_id
  *         required: true
- *         schema:
- *           type: integer
- *         description: Project ID
+ *         schema: { type: integer }
  *     responses:
  *       200:
  *         description: List of attendance records for the project
@@ -393,10 +576,7 @@ router.get("/project/:project_id", async (req, res) => {
  *       - in: path
  *         name: user_id
  *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *         description: User ID
+ *         schema: { type: string, format: uuid }
  *     responses:
  *       200:
  *         description: List of attendance records for the user
@@ -425,8 +605,7 @@ router.get("/user/:user_id", async (req, res) => {
  *       - in: path
  *         name: id
  *         required: true
- *         schema:
- *           type: integer
+ *         schema: { type: integer }
  *     responses:
  *       200:
  *         description: Attendance record
@@ -451,36 +630,31 @@ router.get("/:id", async (req, res) => {
  * @swagger
  * /api/attendance/{id}/status:
  *   patch:
- *     summary: Update attendance status (present/absent)
+ *     summary: Update attendance status (present/absent) — blocked at 15 absences per user
  *     tags: [Attendance]
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema:
- *           type: integer
- *         description: Attendance ID
+ *         schema: { type: integer }
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - status
+ *             required: [status]
  *             properties:
- *               status:
- *                 type: string
- *                 enum: [present, absent]
+ *               status: { type: string, enum: [present, absent] }
  *     responses:
  *       200:
- *         description: Status updated successfully
+ *         description: Status updated
  *       400:
- *         description: Invalid status
+ *         description: Invalid status value
+ *       403:
+ *         description: User already has 15 absences — cannot mark absent again
  *       404:
  *         description: Record not found
- *       500:
- *         description: Server error
  */
 router.patch("/:id/status", async (req, res) => {
   try {
@@ -490,6 +664,35 @@ router.patch("/:id/status", async (req, res) => {
     if (!['present', 'absent'].includes(status)) {
       return res.status(400).json({ error: "Status must be 'present' or 'absent'" });
     }
+
+    // ─── Block marking absent when user is already at/above the 15 limit ─────
+    if (status === 'absent') {
+      const attendanceRow = await pool.query(
+        "SELECT user_id, user_name, status FROM attendance WHERE attendance_id = $1",
+        [id]
+      );
+      if (attendanceRow.rows.length === 0) {
+        return res.status(404).json({ error: "Attendance record not found" });
+      }
+      const { user_id, user_name, status: currentStatus } = attendanceRow.rows[0];
+
+      // Only check limit if this record is not already absent (avoids double-counting)
+      if (currentStatus !== 'absent') {
+        const absentCountResult = await pool.query(
+          "SELECT COUNT(*) FROM attendance WHERE user_id = $1 AND status = 'absent'",
+          [user_id]
+        );
+        const absentCount = parseInt(absentCountResult.rows[0].count);
+        if (absentCount >= 15) {
+          return res.status(403).json({
+            error: `Cannot mark as absent. ${user_name || "This user"} has already reached the maximum limit of 15 absences.`,
+            absent_count: absentCount,
+            user_id: user_id,
+          });
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     const result = await pool.query(
       `UPDATE attendance SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE attendance_id = $2 RETURNING *`,
@@ -527,8 +730,7 @@ router.patch("/:id/status", async (req, res) => {
  *       - in: path
  *         name: id
  *         required: true
- *         schema:
- *           type: integer
+ *         schema: { type: integer }
  *     requestBody:
  *       required: true
  *       content:
@@ -543,18 +745,8 @@ router.put("/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const {
-      photo_selfie,
-      photo_site,
-      location,
-      latitude,
-      longitude,
-      user_name,
-      phone_number,
-      date,
-      day,
-      project_id,
-      user_id,
-      status,
+      photo_selfie, photo_site, location, latitude, longitude,
+      user_name, phone_number, date, day, project_id, user_id, status,
     } = req.body;
 
     const result = await pool.query(
@@ -563,21 +755,8 @@ router.put("/:id", async (req, res) => {
         user_name = $6, phone_number = $7, date = $8, day = $9, project_id = $10,
         user_id = $11, status = $12, updated_at = CURRENT_TIMESTAMP
       WHERE attendance_id = $13 RETURNING *`,
-      [
-        photo_selfie,
-        photo_site,
-        location,
-        latitude,
-        longitude,
-        user_name,
-        phone_number,
-        date,
-        day,
-        project_id,
-        user_id,
-        status,
-        id,
-      ]
+      [photo_selfie, photo_site, location, latitude, longitude,
+       user_name, phone_number, date, day, project_id, user_id, status, id]
     );
 
     if (result.rows.length === 0) {
@@ -611,8 +790,7 @@ router.put("/:id", async (req, res) => {
  *       - in: path
  *         name: id
  *         required: true
- *         schema:
- *           type: integer
+ *         schema: { type: integer }
  *     responses:
  *       200:
  *         description: Attendance record deleted
@@ -621,11 +799,9 @@ router.delete("/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const result = await pool.query("DELETE FROM attendance WHERE attendance_id = $1 RETURNING *", [id]);
-    
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Attendance record not found" });
     }
-
     res.json({ message: "Attendance record deleted successfully" });
 
     logActivity({
@@ -653,9 +829,7 @@ router.delete("/:id", async (req, res) => {
  *       - in: path
  *         name: id
  *         required: true
- *         schema:
- *           type: integer
- *         description: Attendance ID
+ *         schema: { type: integer }
  *     requestBody:
  *       required: true
  *       content:
@@ -676,16 +850,8 @@ router.delete("/:id", async (req, res) => {
 router.put("/checkout/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const {
-      photo_selfie,
-      photo_site,
-      location,
-      latitude,
-      longitude,
-      user_id
-    } = req.body;
+    const { photo_selfie, photo_site, location, latitude, longitude, user_id } = req.body;
 
-    // Fetch user's designated check-out time and current attendance record
     const userResult = await pool.query(
       "SELECT check_out_time, role FROM auth_users WHERE user_id = $1",
       [user_id]
@@ -704,15 +870,11 @@ router.put("/checkout/:id", async (req, res) => {
     if (userResult.rows.length > 0 && userResult.rows[0].role === 'labour' && userResult.rows[0].check_out_time) {
       const designatedCheckOut = userResult.rows[0].check_out_time;
       const now = new Date();
-      
-      // Parse HH:MM:SS
       const [desigH, desigM, desigS] = designatedCheckOut.split(':').map(Number);
       const designatedDate = new Date(now);
       designatedDate.setHours(desigH, desigM, desigS || 0, 0);
-
       if (now < designatedDate) {
-        const diffMs = designatedDate - now;
-        const diffMins = Math.floor(diffMs / 60000);
+        const diffMins = Math.floor((designatedDate - now) / 60000);
         if (diffMins > 0) {
           const earlyRemark = `User checked out early by ${diffMins} minutes`;
           remark = remark ? `${remark}. ${earlyRemark}` : earlyRemark;
@@ -723,13 +885,9 @@ router.put("/checkout/:id", async (req, res) => {
     const result = await pool.query(
       `UPDATE attendance SET
         check_out_time = CURRENT_TIMESTAMP,
-        check_out_photo_selfie = $1,
-        check_out_photo_site = $2,
-        check_out_location = $3,
-        check_out_latitude = $4,
-        check_out_longitude = $5,
-        remark = $6,
-        updated_at = CURRENT_TIMESTAMP
+        check_out_photo_selfie = $1, check_out_photo_site = $2, check_out_location = $3,
+        check_out_latitude = $4, check_out_longitude = $5,
+        remark = $6, updated_at = CURRENT_TIMESTAMP
       WHERE attendance_id = $7 RETURNING *`,
       [photo_selfie, photo_site, location, latitude, longitude, remark, id]
     );
