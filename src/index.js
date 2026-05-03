@@ -33,6 +33,7 @@ const bulkInventoryRoutes    = require("./routes/vendor_price_list_bulk_inventor
 const traceRoutes            = require("./routes/inventory_trace");
 const accessControlRoutes    = require("./routes/access_control");
 const apiLogsRoutes          = require("./routes/api_logs"); // ← NEW
+const leaveRoutes = require("./routes/leave");
 
 // Dashboard + Activity + WebSocket
 const { router: dashboardRouter, wsHandler } = require("./routes/dashboard");
@@ -94,6 +95,7 @@ app.use("/api/quotation",         quotationRoutes); // supports both singular an
 app.use("/api/vendor-price-list", bulkInventoryRoutes);
 app.use("/api/inventory-trace",   traceRoutes);
 app.use("/api/access",            accessControlRoutes);
+app.use("/api/leave", leaveRoutes);
 app.use("/api/logs",              apiLogsRoutes); // ← NEW: live API log viewer
 
 // Dashboard routes
