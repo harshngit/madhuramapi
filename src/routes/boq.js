@@ -195,6 +195,8 @@ function parseBOQPdfNpm(filePath) {
  *           type: string
  *         project_id:
  *           type: integer
+ *         project_name:
+ *           type: string
  *         created_at:
  *           type: string
  *           format: date-time
@@ -254,6 +256,8 @@ function parseBOQPdfNpm(filePath) {
  *                 type: number
  *               project_id:
  *                 type: integer
+ *               project_name:
+ *                 type: string
  *               boq_file:
  *                 type: string
  *                 format: binary
@@ -269,17 +273,17 @@ router.post("/", upload.single("boq_file"), async (req, res) => {
   try {
     const {
       category, item_code, description, floor,
-      unit, quantity, rate, amount, project_id,
+      unit, quantity, rate, amount, project_id, project_name
     } = req.body;
 
     const boq_file = req.file ? `/uploads/boq/${req.file.filename}` : null;
 
     const result = await pool.query(
       `INSERT INTO boqs
-         (category, item_code, description, floor, unit, quantity, rate, amount, boq_file, project_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         (category, item_code, description, floor, unit, quantity, rate, amount, boq_file, project_id, project_name)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        RETURNING *`,
-      [category, item_code, description, floor, unit, quantity, rate, amount, boq_file, project_id]
+      [category, item_code, description, floor, unit, quantity, rate, amount, boq_file, project_id, project_name]
     );
 
     res.status(201).json(result.rows[0]);
@@ -372,11 +376,13 @@ router.get("/", async (req, res) => {
  *                         type: number
  *                       project_id:
  *                         type: integer
+ *                       project_name:
+ *                         type: string
  */
 router.get("/items", async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT boq_id, item_code AS item_no, description, unit, quantity AS qty, project_id
+      `SELECT boq_id, item_code AS item_no, description, unit, quantity AS qty, project_id, project_name
        FROM boqs
        ORDER BY boq_id ASC`
     );

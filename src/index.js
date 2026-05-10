@@ -58,7 +58,32 @@ app.use(
 );
 
 // Swagger
-app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+const swaggerOptions = {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: "Madhuram API Docs",
+  swaggerOptions: {
+    persistAuthorization: true,
+    displayRequestDuration: true,
+    filter: true,
+    tryItOutEnabled: true,
+    // Add theme selection logic if needed, but standard UI supports simple CSS injection
+  }
+};
+
+// Dark mode can be toggled via a simple CSS injection in Swagger UI setup
+const darkThemeCss = `
+  .swagger-ui { filter: invert(88%) hue-rotate(180deg); background: #1b1b1b; }
+  .swagger-ui .microlight { filter: invert(100%) hue-rotate(180deg); }
+`;
+
+app.use("/docs", swaggerUi.serve, (req, res) => {
+  const theme = req.query.theme || 'light';
+  const options = { ...swaggerOptions };
+  if (theme === 'dark') {
+    options.customCss = (options.customCss || '') + darkThemeCss;
+  }
+  swaggerUi.setup(swaggerSpec, options)(req, res);
+});
 
 // Health check (not logged — see apiLogger skip list)
 app.get("/health", (req, res) => {
