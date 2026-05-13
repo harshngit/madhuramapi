@@ -34,6 +34,7 @@ const traceRoutes            = require("./routes/inventory_trace");
 const accessControlRoutes    = require("./routes/access_control");
 const apiLogsRoutes          = require("./routes/api_logs"); // ← NEW
 const leaveRoutes = require("./routes/leave");
+const backpathRoutes = require("./routes/backpath");
 
 // Dashboard + Activity + WebSocket
 const { router: dashboardRouter, wsHandler } = require("./routes/dashboard");
@@ -122,8 +123,9 @@ app.use("/api/inventory-trace",   traceRoutes);
 app.use("/api/access",            accessControlRoutes);
 app.use("/api/leave", leaveRoutes);
 app.use("/api/logs",              apiLogsRoutes); // ← NEW: live API log viewer
+app.use("/api/backpath", backpathRoutes);
 
-// Dashboard routes
+// Dashboard + Activityroutes
 app.use("/api/dashboard", dashboardRouter);
 
 // 404
