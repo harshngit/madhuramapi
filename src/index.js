@@ -35,6 +35,7 @@ const accessControlRoutes    = require("./routes/access_control");
 const apiLogsRoutes          = require("./routes/api_logs"); // ← NEW
 const leaveRoutes = require("./routes/leave");
 const backpathRoutes = require("./routes/backpath");
+const vendorComparisonRoutes = require("./routes/vendor_comparison");
 
 // Dashboard + Activity + WebSocket
 const { router: dashboardRouter, wsHandler } = require("./routes/dashboard");
@@ -124,6 +125,7 @@ app.use("/api/access",            accessControlRoutes);
 app.use("/api/leave", leaveRoutes);
 app.use("/api/logs",              apiLogsRoutes); // ← NEW: live API log viewer
 app.use("/api/backpath", backpathRoutes);
+app.use("/api/vendor-comparison", vendorComparisonRoutes);
 
 // Dashboard + Activityroutes
 app.use("/api/dashboard", dashboardRouter);
