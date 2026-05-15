@@ -38,13 +38,15 @@ const upload = multer({ storage });
  *           type: integer
  *         project_id:
  *           type: integer
- *         vendor_name:
- *           type: string
+ *         pr_no:
+ *           type: integer
  *         pricelist:
  *           type: array
  *           items:
  *             type: object
  *             properties:
+ *               vendor_name:
+ *                 type: string
  *               item_description:
  *                 type: string
  *               total_qty:
@@ -133,12 +135,13 @@ router.post("/upload", upload.array("files"), (req, res) => {
  *             type: object
  *             properties:
  *               project_id: { type: integer }
- *               vendor_name: { type: string }
+ *               pr_no: { type: integer }
  *               pricelist:
  *                 type: array
  *                 items:
  *                   type: object
  *                   properties:
+ *                     vendor_name: { type: string }
  *                     item_description: { type: string }
  *                     total_qty: { type: number }
  *                     rate: { type: number }
@@ -156,15 +159,15 @@ router.post("/upload", upload.array("files"), (req, res) => {
  */
 router.post("/", async (req, res) => {
   try {
-    const { project_id, vendor_name, pricelist, upload_document, user_id, user_name } = req.body;
+    const { project_id, pr_no, pricelist, upload_document, user_id, user_name } = req.body;
 
     const result = await pool.query(
-      `INSERT INTO vendor_comparisons (project_id, vendor_name, pricelist, upload_document)
+      `INSERT INTO vendor_comparisons (project_id, pr_no, pricelist, upload_document)
        VALUES ($1, $2, $3, $4)
        RETURNING *`,
       [
         project_id,
-        vendor_name,
+        pr_no,
         JSON.stringify(pricelist || []),
         JSON.stringify(upload_document || [])
       ]
@@ -176,7 +179,7 @@ router.post("/", async (req, res) => {
       action: "created",
       entity_type: "vendor_comparison",
       entity_id: vc.comparison_id,
-      entity_name: vc.vendor_name,
+      entity_name: `Comparison for PR #${pr_no}`,
       performed_by: user_id || null,
       performed_by_name: user_name || null,
       project_id: vc.project_id,
@@ -202,19 +205,31 @@ router.post("/", async (req, res) => {
  *       - in: query
  *         name: project_id
  *         schema: { type: integer }
+ *       - in: query
+ *         name: pr_no
+ *         schema: { type: integer }
  *     responses:
  *       200:
  *         description: List of vendor comparisons
  */
 router.get("/", async (req, res) => {
   try {
-    const { project_id } = req.query;
+    const { project_id, pr_no } = req.query;
     let query = "SELECT * FROM vendor_comparisons";
+    let conditions = [];
     let params = [];
 
     if (project_id) {
-      query += " WHERE project_id = $1";
       params.push(project_id);
+      conditions.push(`project_id = $${params.length}`);
+    }
+    if (pr_no) {
+      params.push(pr_no);
+      conditions.push(`pr_no = $${params.length}`);
+    }
+
+    if (conditions.length > 0) {
+      query += " WHERE " + conditions.join(" AND ");
     }
 
     query += " ORDER BY created_at DESC";
@@ -284,18 +299,18 @@ router.get("/:id", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { vendor_name, pricelist, upload_document, user_id, user_name } = req.body;
+    const { pr_no, pricelist, upload_document, user_id, user_name } = req.body;
 
     const result = await pool.query(
       `UPDATE vendor_comparisons SET
-         vendor_name = COALESCE($1, vendor_name),
+         pr_no = COALESCE($1, pr_no),
          pricelist = COALESCE($2, pricelist),
          upload_document = COALESCE($3, upload_document),
          updated_at = CURRENT_TIMESTAMP
        WHERE comparison_id = $4
        RETURNING *`,
       [
-        vendor_name || null,
+        pr_no || null,
         pricelist ? JSON.stringify(pricelist) : null,
         upload_document ? JSON.stringify(upload_document) : null,
         id
@@ -311,7 +326,7 @@ router.put("/:id", async (req, res) => {
       action: "updated",
       entity_type: "vendor_comparison",
       entity_id: vc.comparison_id,
-      entity_name: vc.vendor_name,
+      entity_name: `Comparison for PR #${vc.pr_no}`,
       performed_by: user_id || null,
       performed_by_name: user_name || null,
       project_id: vc.project_id,
@@ -364,7 +379,7 @@ router.delete("/:id", async (req, res) => {
       action: "deleted",
       entity_type: "vendor_comparison",
       entity_id: id,
-      entity_name: vc.vendor_name,
+      entity_name: `Comparison for PR #${vc.pr_no}`,
       performed_by: user_id || null,
       performed_by_name: user_name || null,
       project_id: vc.project_id,
