@@ -208,31 +208,43 @@ router.post("/", async (req, res) => {
  *       - in: query
  *         name: pr_no
  *         schema: { type: integer }
+ *       - in: query
+ *         name: pr_name
+ *         schema: { type: string }
+ *         description: Filter by Purchase Requisition (project) name
  *     responses:
  *       200:
  *         description: List of vendor comparisons
  */
 router.get("/", async (req, res) => {
   try {
-    const { project_id, pr_no } = req.query;
-    let query = "SELECT * FROM vendor_comparisons";
+    const { project_id, pr_no, pr_name } = req.query;
+    let query = `
+      SELECT vc.*, pr.project_name as pr_name
+      FROM vendor_comparisons vc
+      LEFT JOIN purchase_requisitions pr ON vc.pr_no = pr.pr_id
+    `;
     let conditions = [];
     let params = [];
 
     if (project_id) {
       params.push(project_id);
-      conditions.push(`project_id = $${params.length}`);
+      conditions.push(`vc.project_id = $${params.length}`);
     }
     if (pr_no) {
       params.push(pr_no);
-      conditions.push(`pr_no = $${params.length}`);
+      conditions.push(`vc.pr_no = $${params.length}`);
+    }
+    if (pr_name) {
+      params.push(`%${pr_name}%`);
+      conditions.push(`pr.project_name ILIKE $${params.length}`);
     }
 
     if (conditions.length > 0) {
       query += " WHERE " + conditions.join(" AND ");
     }
 
-    query += " ORDER BY created_at DESC";
+    query += " ORDER BY vc.created_at DESC";
     const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (error) {
