@@ -36,6 +36,8 @@ const apiLogsRoutes          = require("./routes/api_logs"); // ← NEW
 const leaveRoutes = require("./routes/leave");
 const backpathRoutes = require("./routes/backpath");
 const vendorComparisonRoutes = require("./routes/vendor_comparison");
+const lodhaInvoiceRoutes     = require("./routes/lodha_invoice");
+const hiranandaniInvoiceRoutes = require("./routes/hiranandani_invoice");
 
 // Dashboard + Activity + WebSocket
 const { router: dashboardRouter, wsHandler } = require("./routes/dashboard");
@@ -126,6 +128,8 @@ app.use("/api/leave", leaveRoutes);
 app.use("/api/logs",              apiLogsRoutes); // ← NEW: live API log viewer
 app.use("/api/backpath", backpathRoutes);
 app.use("/api/vendor-comparison", vendorComparisonRoutes);
+app.use("/api/lodha-invoice",     lodhaInvoiceRoutes);
+app.use("/api/hiranandani-invoice", hiranandaniInvoiceRoutes);
 
 // Dashboard + Activityroutes
 app.use("/api/dashboard", dashboardRouter);
