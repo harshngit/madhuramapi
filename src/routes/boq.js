@@ -220,8 +220,8 @@ function parseLodhaBoqPdf(filePath) {
 
           if (item_description) {
             items.push({
-              sr_no: anchor.sr_no,
-              item_description,
+              item_no: anchor.sr_no,
+              description: item_description,
               hsn,
               unit,
               qty,
@@ -349,8 +349,8 @@ function parseHiranandaniBoqPdf(filePath) {
           ) continue;
 
           items.push({
-            sr_no: anchor.sr_no,
-            service_description,
+            item_no: anchor.sr_no,
+            description: service_description,
             order_qty,
             uom,
             unit_price,
@@ -429,10 +429,12 @@ function parseHiranandaniBoqPdf(filePath) {
  *     LodhaBoqItem:
  *       type: object
  *       properties:
- *         sr_no:
+ *         item_no:
  *           type: string
  *           example: "1.01.1"
- *         item_description:
+ *         description:
+ *           type: string
+ *         section:
  *           type: string
  *         hsn:
  *           type: string
@@ -453,26 +455,28 @@ function parseHiranandaniBoqPdf(filePath) {
  *     HiranandaniBoqItem:
  *       type: object
  *       properties:
- *         sr_no:
+ *         item_no:
  *           type: string
  *           example: "1"
- *         service_description:
+ *         description:
  *           type: string
- *         order_qty:
+ *         section:
  *           type: string
- *           example: "340"
+ *         sac_code:
+ *           type: string
+ *           example: "9954"
  *         uom:
  *           type: string
  *           example: "NOS"
+ *         order_qty:
+ *           type: string
+ *           example: "340"
  *         unit_price:
  *           type: string
  *           example: "522.50"
  *         value:
  *           type: string
  *           example: "177650.00"
- *         section:
- *           type: string
- *           nullable: true
  */
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -573,10 +577,12 @@ router.post("/", upload.single("boq_file"), async (req, res) => {
  *     summary: Create a Lodha BOQ item
  *     description: |
  *       Creates a BOQ entry using the **Lodha** work order field layout:
- *       `item_description`, `hsn`, `unit`, `qty`, `rate`, `amount`.
+ *       `description`, `section`, `item_no`, `hsn`, `unit`, `qty`, `rate`, `amount`.
  *
  *       These are mapped internally to the `boqs` table as:
- *       - item_description → description
+ *       - description → description
+ *       - section → category
+ *       - item_no → item_no
  *       - hsn → item_code
  *       - qty → quantity
  *     tags: [BOQ]
@@ -587,18 +593,24 @@ router.post("/", upload.single("boq_file"), async (req, res) => {
  *           schema:
  *             type: object
  *             required:
- *               - item_description
+ *               - description
  *               - project_id
  *             properties:
- *               item_description:
+ *               description:
  *                 type: string
- *                 description: Item description as per Lodha BOQ
+ *                 description: Description as per Lodha BOQ
+ *               section:
+ *                 type: string
+ *                 description: Section as per Lodha BOQ
+ *               item_no:
+ *                 type: string
+ *                 description: Item No as per Lodha BOQ
  *               hsn:
  *                 type: string
  *                 description: HSN/SAC code
  *               unit:
  *                 type: string
- *                 description: Unit of measurement (e.g. SET, NOS, RMT)
+ *                 description: Unit of measurement
  *               qty:
  *                 type: number
  *                 description: Quantity
@@ -607,13 +619,11 @@ router.post("/", upload.single("boq_file"), async (req, res) => {
  *                 description: Rate per unit
  *               amount:
  *                 type: number
- *                 description: Total amount (qty × rate)
+ *                 description: Total amount
  *               project_id:
  *                 type: integer
  *                 description: Project ID (required)
  *               project_name:
- *                 type: string
- *               category:
  *                 type: string
  *               floor:
  *                 type: string
@@ -626,27 +636,7 @@ router.post("/", upload.single("boq_file"), async (req, res) => {
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 boq_id:
- *                   type: integer
- *                 client:
- *                   type: string
- *                   example: lodha
- *                 item_description:
- *                   type: string
- *                 hsn:
- *                   type: string
- *                 unit:
- *                   type: string
- *                 qty:
- *                   type: number
- *                 rate:
- *                   type: number
- *                 amount:
- *                   type: number
- *                 project_id:
- *                   type: integer
+ *               $ref: '#/components/schemas/LodhaBoqItem'
  *       400:
  *         description: Missing required fields or invalid project_id
  *       500:
@@ -655,12 +645,12 @@ router.post("/", upload.single("boq_file"), async (req, res) => {
 router.post("/lodha", upload.single("boq_file"), async (req, res) => {
   try {
     const {
-      item_description, hsn, unit, qty, rate, amount,
-      project_id, project_name, category, floor,
+      description, section, item_no, hsn, unit, qty, rate, amount,
+      project_id, project_name, floor,
     } = req.body;
 
-    if (!item_description) {
-      return res.status(400).json({ error: "item_description is required" });
+    if (!description) {
+      return res.status(400).json({ error: "description is required" });
     }
     if (!project_id) {
       return res.status(400).json({ error: "project_id is required" });
@@ -670,13 +660,14 @@ router.post("/lodha", upload.single("boq_file"), async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO boqs
-         (category, item_code, description, floor, unit, quantity, rate, amount, boq_file, project_id, project_name)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         (category, item_no, item_code, description, floor, unit, quantity, rate, amount, boq_file, project_id, project_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING *`,
       [
-        category || null,
+        section || null,       // section → category
+        item_no || null,       // item_no → item_no
         hsn || null,           // hsn → item_code
-        item_description,      // item_description → description
+        description,           // description → description
         floor || null,
         unit || null,
         parseFloat(qty) || 0,  // qty → quantity
@@ -693,7 +684,9 @@ router.post("/lodha", upload.single("boq_file"), async (req, res) => {
     res.status(201).json({
       boq_id:           row.boq_id,
       client:           "lodha",
-      item_description: row.description,
+      description:      row.description,
+      section:          row.category,
+      item_no:          row.item_no,
       hsn:              row.item_code,
       unit:             row.unit,
       qty:              row.quantity,
@@ -701,7 +694,6 @@ router.post("/lodha", upload.single("boq_file"), async (req, res) => {
       amount:           row.amount,
       project_id:       row.project_id,
       project_name:     row.project_name,
-      category:         row.category,
       floor:            row.floor,
       boq_file:         row.boq_file,
       created_at:       row.created_at,
@@ -711,7 +703,7 @@ router.post("/lodha", upload.single("boq_file"), async (req, res) => {
       action: "created",
       entity_type: "boq",
       entity_id: row.boq_id,
-      entity_name: item_description || `Lodha BOQ #${row.boq_id}`,
+      entity_name: description || `Lodha BOQ #${row.boq_id}`,
       performed_by: req.body.user_id || null,
       performed_by_name: req.body.user_name || null,
       project_id,
@@ -738,10 +730,13 @@ router.post("/lodha", upload.single("boq_file"), async (req, res) => {
  *     summary: Create a Hiranandani BOQ item
  *     description: |
  *       Creates a BOQ entry using the **Hiranandani** work order field layout:
- *       `service_description`, `order_qty`, `uom`, `unit_price`, `value`.
+ *       `description`, `section`, `item_no`, `sac_code`, `uom`, `order_qty`, `unit_price`, `value`.
  *
  *       These are mapped internally to the `boqs` table as:
- *       - service_description → description
+ *       - description → description
+ *       - section → category
+ *       - item_no → item_no
+ *       - sac_code → item_code
  *       - order_qty → quantity
  *       - uom → unit
  *       - unit_price → rate
@@ -754,18 +749,27 @@ router.post("/lodha", upload.single("boq_file"), async (req, res) => {
  *           schema:
  *             type: object
  *             required:
- *               - service_description
+ *               - description
  *               - project_id
  *             properties:
- *               service_description:
+ *               description:
  *                 type: string
- *                 description: Service description as per Hiranandani work order
- *               order_qty:
- *                 type: number
- *                 description: Order quantity
+ *                 description: Description as per Hiranandani BOQ
+ *               section:
+ *                 type: string
+ *                 description: Section as per Hiranandani BOQ
+ *               item_no:
+ *                 type: string
+ *                 description: Item No as per Hiranandani BOQ
+ *               sac_code:
+ *                 type: string
+ *                 description: SAC Code
  *               uom:
  *                 type: string
  *                 description: Unit of measurement (e.g. NOS, AU, M)
+ *               order_qty:
+ *                 type: number
+ *                 description: Order quantity
  *               unit_price:
  *                 type: number
  *                 description: Unit price
@@ -776,8 +780,6 @@ router.post("/lodha", upload.single("boq_file"), async (req, res) => {
  *                 type: integer
  *                 description: Project ID (required)
  *               project_name:
- *                 type: string
- *               category:
  *                 type: string
  *               floor:
  *                 type: string
@@ -790,25 +792,7 @@ router.post("/lodha", upload.single("boq_file"), async (req, res) => {
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 boq_id:
- *                   type: integer
- *                 client:
- *                   type: string
- *                   example: hiranandani
- *                 service_description:
- *                   type: string
- *                 order_qty:
- *                   type: number
- *                 uom:
- *                   type: string
- *                 unit_price:
- *                   type: number
- *                 value:
- *                   type: number
- *                 project_id:
- *                   type: integer
+ *               $ref: '#/components/schemas/HiranandaniBoqItem'
  *       400:
  *         description: Missing required fields or invalid project_id
  *       500:
@@ -817,12 +801,12 @@ router.post("/lodha", upload.single("boq_file"), async (req, res) => {
 router.post("/hiranandani", upload.single("boq_file"), async (req, res) => {
   try {
     const {
-      service_description, order_qty, uom, unit_price, value,
-      project_id, project_name, category, floor,
+      description, section, item_no, sac_code, uom, order_qty, unit_price, value,
+      project_id, project_name, floor,
     } = req.body;
 
-    if (!service_description) {
-      return res.status(400).json({ error: "service_description is required" });
+    if (!description) {
+      return res.status(400).json({ error: "description is required" });
     }
     if (!project_id) {
       return res.status(400).json({ error: "project_id is required" });
@@ -832,13 +816,14 @@ router.post("/hiranandani", upload.single("boq_file"), async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO boqs
-         (category, item_code, description, floor, unit, quantity, rate, amount, boq_file, project_id, project_name)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         (category, item_no, item_code, description, floor, unit, quantity, rate, amount, boq_file, project_id, project_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING *`,
       [
-        category || null,
-        null,                         // no HSN in Hiranandani format
-        service_description,          // service_description → description
+        section || null,              // section → category
+        item_no || null,              // item_no → item_no
+        sac_code || null,             // sac_code → item_code
+        description,                  // description → description
         floor || null,
         uom || null,                  // uom → unit
         parseFloat(order_qty) || 0,   // order_qty → quantity
@@ -853,26 +838,28 @@ router.post("/hiranandani", upload.single("boq_file"), async (req, res) => {
     const row = result.rows[0];
 
     res.status(201).json({
-      boq_id:              row.boq_id,
-      client:              "hiranandani",
-      service_description: row.description,
-      order_qty:           row.quantity,
-      uom:                 row.unit,
-      unit_price:          row.rate,
-      value:               row.amount,
-      project_id:          row.project_id,
-      project_name:        row.project_name,
-      category:            row.category,
-      floor:               row.floor,
-      boq_file:            row.boq_file,
-      created_at:          row.created_at,
+      boq_id:           row.boq_id,
+      client:           "hiranandani",
+      description:      row.description,
+      section:          row.category,
+      item_no:          row.item_no,
+      sac_code:         row.item_code,
+      uom:              row.unit,
+      order_qty:        row.quantity,
+      unit_price:       row.rate,
+      value:            row.amount,
+      project_id:       row.project_id,
+      project_name:     row.project_name,
+      floor:            row.floor,
+      boq_file:         row.boq_file,
+      created_at:       row.created_at,
     });
 
     logActivity({
       action: "created",
       entity_type: "boq",
       entity_id: row.boq_id,
-      entity_name: service_description || `Hiranandani BOQ #${row.boq_id}`,
+      entity_name: description || `Hiranandani BOQ #${row.boq_id}`,
       performed_by: req.body.user_id || null,
       performed_by_name: req.body.user_name || null,
       project_id,
@@ -1130,20 +1117,22 @@ router.post("/parse-pdf/lodha", upload.single("boq_file"), async (req, res) => {
 
     if (shouldSave && project_id) {
       const sql = `
-        INSERT INTO boqs (category, item_code, description, unit, quantity, rate, amount, boq_file, project_id)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        INSERT INTO boqs (category, item_no, item_code, description, unit, quantity, rate, amount, boq_file, project_id, project_name)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
       `;
       for (const item of parsedItems) {
         await pool.query(sql, [
-          category || null,
+          category || item.section || null,
+          item.item_no || null,
           item.hsn || null,
-          item.item_description,
+          item.description,
           item.unit || null,
           parseFloat(item.qty)    || 0,
           parseFloat(item.rate)   || 0,
           parseFloat(item.amount) || 0,
           `/uploads/boq/${req.file.filename}`,
           parseInt(project_id),
+          project_name || null,
         ]);
         savedCount++;
       }
@@ -1263,19 +1252,22 @@ router.post("/parse-pdf/hiranandani", upload.single("boq_file"), async (req, res
 
     if (shouldSave && project_id) {
       const sql = `
-        INSERT INTO boqs (category, description, unit, quantity, rate, amount, boq_file, project_id)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        INSERT INTO boqs (category, item_no, item_code, description, unit, quantity, rate, amount, boq_file, project_id, project_name)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
       `;
       for (const item of parsedItems) {
         await pool.query(sql, [
           category || item.section || null,
-          item.service_description,
+          item.item_no || null,
+          item.sac_code || null,
+          item.description,
           item.uom || null,
           parseFloat(item.order_qty)   || 0,
           parseFloat(item.unit_price)  || 0,
           parseFloat(item.value)       || 0,
           `/uploads/boq/${req.file.filename}`,
           parseInt(project_id),
+          project_name || null,
         ]);
         savedCount++;
       }
