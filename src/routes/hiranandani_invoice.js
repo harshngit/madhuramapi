@@ -4,6 +4,96 @@ const { logActivity } = require("./dashboard");
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     HiranandaniInvoiceItemInput:
+ *       type: object
+ *       properties:
+ *         serial_number:                 { type: integer }
+ *         goods_or_service_description:  { type: string }
+ *         sac_code:                      { type: string }
+ *         value_of_supply:               { type: number }
+ *         discount:                      { type: number }
+ *         taxable_value:                 { type: number }
+ *         cgst_rate:                     { type: number }
+ *         cgst_amount:                   { type: number }
+ *         sgst_rate:                     { type: number }
+ *         sgst_amount:                   { type: number }
+ *         igst_rate:                     { type: number }
+ *         igst_amount:                   { type: number }
+ *         cess_rate:                     { type: number }
+ *         cess_amount:                   { type: number }
+ *     HiranandaniInvoiceItem:
+ *       allOf:
+ *         - $ref: '#/components/schemas/HiranandaniInvoiceItemInput'
+ *         - type: object
+ *           properties:
+ *             item_id: { type: integer }
+ *             invoice_id: { type: integer }
+ *     HiranandaniInvoiceInput:
+ *       type: object
+ *       required:
+ *         - invoice_number
+ *       properties:
+ *         company_name:             { type: string }
+ *         project_id:               { type: integer }
+ *         company_address:          { type: string }
+ *         company_contact_number:   { type: string }
+ *         company_email:            { type: string }
+ *         company_website:          { type: string }
+ *         supplier_gstin:           { type: string }
+ *         invoice_number:           { type: string }
+ *         invoice_date:             { type: string, format: date }
+ *         bill_to_company_name:     { type: string }
+ *         bill_to_address:          { type: string }
+ *         bill_to_gstin:            { type: string }
+ *         bill_to_state:            { type: string }
+ *         bill_to_state_code:       { type: string }
+ *         ship_to_company_name:     { type: string }
+ *         ship_to_address:          { type: string }
+ *         ship_to_gstin:            { type: string }
+ *         ship_to_state:            { type: string }
+ *         ship_to_state_code:       { type: string }
+ *         building_name:            { type: string }
+ *         reference_ra_number:      { type: string }
+ *         work_description:         { type: string }
+ *         work_order_number:        { type: string }
+ *         work_order_date:          { type: string, format: date }
+ *         service_date_from:        { type: string, format: date }
+ *         service_date_to:          { type: string, format: date }
+ *         total_value_before_tax:   { type: number }
+ *         total_taxable_value:      { type: number }
+ *         total_cgst:               { type: number }
+ *         total_sgst:               { type: number }
+ *         round_off:                { type: number }
+ *         total_amount_after_tax:   { type: number }
+ *         gst_on_reverse_charge:    { type: number }
+ *         invoice_amount_in_words:  { type: string }
+ *         bank_details:             { type: string }
+ *         terms_and_conditions:     { type: string }
+ *         authorised_signatory:     { type: string }
+ *         user_id:                  { type: string }
+ *         user_name:                { type: string }
+ *         items:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/HiranandaniInvoiceItemInput'
+ *     HiranandaniInvoice:
+ *       allOf:
+ *         - $ref: '#/components/schemas/HiranandaniInvoiceInput'
+ *         - type: object
+ *           properties:
+ *             invoice_id: { type: integer }
+ *             created_at: { type: string, format: date-time }
+ *             updated_at: { type: string, format: date-time }
+ *             items:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/HiranandaniInvoiceItem'
+ */
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CRUD: CREATE Hiranandani Invoice
 // ─────────────────────────────────────────────────────────────────────────────
@@ -18,66 +108,16 @@ const router = express.Router();
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             required:
- *               - invoice_number
- *             properties:
- *               company_name:             { type: string }
- *               project_id:               { type: integer }
- *               company_address:          { type: string }
- *               company_contact_number:   { type: string }
- *               company_email:            { type: string }
- *               company_website:          { type: string }
- *               supplier_gstin:           { type: string }
- *               invoice_number:           { type: string }
- *               invoice_date:             { type: string, format: date }
- *               bill_to_company_name:     { type: string }
- *               bill_to_address:          { type: string }
- *               bill_to_gstin:            { type: string }
- *               bill_to_state:            { type: string }
- *               bill_to_state_code:       { type: string }
- *               ship_to_company_name:     { type: string }
- *               ship_to_address:          { type: string }
- *               ship_to_gstin:            { type: string }
- *               ship_to_state:            { type: string }
- *               ship_to_state_code:       { type: string }
- *               building_name:            { type: string }
- *               reference_ra_number:      { type: string }
- *               work_description:         { type: string }
- *               work_order_number:        { type: string }
- *               work_order_date:          { type: string, format: date }
- *               service_date_from:        { type: string, format: date }
- *               service_date_to:          { type: string, format: date }
- *               total_value_before_tax:   { type: number }
- *               total_taxable_value:      { type: number }
- *               total_cgst:               { type: number }
- *               total_sgst:               { type: number }
- *               round_off:                { type: number }
- *               total_amount_after_tax:   { type: number }
- *               gst_on_reverse_charge:    { type: number }
- *               invoice_amount_in_words:  { type: string }
- *               bank_details:             { type: string }
- *               terms_and_conditions:     { type: string }
- *               authorised_signatory:     { type: string }
- *               items:
- *                 type: array
- *                 items:
- *                   type: object
- *                   properties:
- *                     serial_number:                 { type: integer }
- *                     goods_or_service_description:  { type: string }
- *                     sac_code:                      { type: string }
- *                     value_of_supply:               { type: number }
- *                     discount:                      { type: number }
- *                     taxable_value:                 { type: number }
- *                     cgst_rate:                     { type: number }
- *                     cgst_amount:                   { type: number }
- *                     sgst_rate:                     { type: number }
- *                     sgst_amount:                   { type: number }
- *                     igst_rate:                     { type: number }
- *                     igst_amount:                   { type: number }
- *                     cess_rate:                     { type: number }
- *                     cess_amount:                   { type: number }
+ *             $ref: '#/components/schemas/HiranandaniInvoiceInput'
+ *     responses:
+ *       201:
+ *         description: Invoice created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HiranandaniInvoice'
+ *       500:
+ *         description: Server error
  */
 router.post("/", async (req, res) => {
   const client = await pool.connect();
@@ -156,6 +196,9 @@ router.post("/", async (req, res) => {
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("Create Hiranandani Invoice error:", err);
+    if (err.code === "23505") {
+      return res.status(409).json({ error: `Invoice number '${req.body.invoice_number}' already exists.` });
+    }
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -174,6 +217,14 @@ router.post("/", async (req, res) => {
  *     responses:
  *       200:
  *         description: List of invoices
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/HiranandaniInvoice'
+ *       500:
+ *         description: Server error
  */
 router.get("/", async (req, res) => {
   try {
@@ -198,9 +249,18 @@ router.get("/", async (req, res) => {
  *         name: projectId
  *         required: true
  *         schema: { type: integer }
+ *         description: The project ID
  *     responses:
  *       200:
  *         description: List of invoices for the project
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/HiranandaniInvoice'
+ *       500:
+ *         description: Server error
  */
 router.get("/project/:projectId", async (req, res) => {
   try {
@@ -229,9 +289,18 @@ router.get("/project/:projectId", async (req, res) => {
  *         name: id
  *         required: true
  *         schema: { type: integer }
+ *         description: The invoice ID
  *     responses:
  *       200:
  *         description: Invoice details with items
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HiranandaniInvoice'
+ *       404:
+ *         description: Invoice not found
+ *       500:
+ *         description: Server error
  */
 router.get("/:id", async (req, res) => {
   try {
@@ -264,12 +333,26 @@ router.get("/:id", async (req, res) => {
  *         name: id
  *         required: true
  *         schema: { type: integer }
+ *         description: The invoice ID
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
- *             type: object
+ *             $ref: '#/components/schemas/HiranandaniInvoiceInput'
+ *     responses:
+ *       200:
+ *         description: Invoice updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message: { type: string }
+ *       404:
+ *         description: Invoice not found
+ *       500:
+ *         description: Server error
  */
 router.put("/:id", async (req, res) => {
   const { id } = req.params;
@@ -349,6 +432,10 @@ router.put("/:id", async (req, res) => {
     res.json({ message: "Invoice updated successfully" });
   } catch (err) {
     await client.query("ROLLBACK");
+    console.error("Update Hiranandani Invoice error:", err);
+    if (err.code === "23505") {
+      return res.status(409).json({ error: `Invoice number '${req.body.invoice_number}' already exists.` });
+    }
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -369,9 +456,20 @@ router.put("/:id", async (req, res) => {
  *         name: id
  *         required: true
  *         schema: { type: integer }
+ *         description: The invoice ID
  *     responses:
  *       200:
  *         description: Deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message: { type: string }
+ *       404:
+ *         description: Invoice not found
+ *       500:
+ *         description: Server error
  */
 router.delete("/:id", async (req, res) => {
   try {

@@ -4,6 +4,95 @@ const { logActivity } = require("./dashboard");
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     LodhaInvoiceItemInput:
+ *       type: object
+ *       properties:
+ *         sr:                { type: integer }
+ *         description:       { type: string }
+ *         sac_code:          { type: string }
+ *         value_of_supply:   { type: number }
+ *         discount:          { type: number }
+ *         taxable_value:     { type: number }
+ *         cgst_rate:         { type: number }
+ *         cgst_amount:       { type: number }
+ *         sgst_rate:         { type: number }
+ *         sgst_amount:       { type: number }
+ *         total:             { type: number }
+ *     LodhaInvoiceItem:
+ *       allOf:
+ *         - $ref: '#/components/schemas/LodhaInvoiceItemInput'
+ *         - type: object
+ *           properties:
+ *             item_id: { type: integer }
+ *             invoice_id: { type: integer }
+ *     LodhaInvoiceInput:
+ *       type: object
+ *       required:
+ *         - invoice_number
+ *       properties:
+ *         company_name:              { type: string }
+ *         company_address:           { type: string }
+ *         company_contact_number:    { type: string }
+ *         company_email:             { type: string }
+ *         company_website:           { type: string }
+ *         invoice_title:             { type: string }
+ *         invoice_number:            { type: string }
+ *         supplier_gstin:            { type: string }
+ *         pan_no:                    { type: string }
+ *         pf_number:                 { type: string }
+ *         esic_number:               { type: string }
+ *         ptr_number:                { type: string }
+ *         mlwf_number:               { type: string }
+ *         reverse_charge:            { type: boolean }
+ *         state_name:                { type: string }
+ *         state_code:                { type: string }
+ *         receiver_name:             { type: string }
+ *         receiver_address:          { type: string }
+ *         buyer_gstin:               { type: string }
+ *         ship_to_name:              { type: string }
+ *         ship_to_state:             { type: string }
+ *         ship_to_state_code:        { type: string }
+ *         ship_to_gstin:             { type: string }
+ *         project_id:                { type: integer }
+ *         building_name:             { type: string }
+ *         ra_number:                 { type: string }
+ *         work_description:          { type: string }
+ *         work_order_number:         { type: string }
+ *         service_date_from:         { type: string, format: date }
+ *         service_date_to:           { type: string, format: date }
+ *         total_taxable_value:       { type: number }
+ *         total_cgst:                { type: number }
+ *         total_sgst:                { type: number }
+ *         total_invoice_value:       { type: number }
+ *         round_off:                 { type: number }
+ *         total_invoice_value_words: { type: string }
+ *         gst_on_reverse_charge:     { type: number }
+ *         terms:                     { type: string }
+ *         authorised_signatory:      { type: string }
+ *         user_id:                   { type: string }
+ *         user_name:                 { type: string }
+ *         items:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/LodhaInvoiceItemInput'
+ *     LodhaInvoice:
+ *       allOf:
+ *         - $ref: '#/components/schemas/LodhaInvoiceInput'
+ *         - type: object
+ *           properties:
+ *             invoice_id: { type: integer }
+ *             created_at: { type: string, format: date-time }
+ *             updated_at: { type: string, format: date-time }
+ *             items:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/LodhaInvoiceItem'
+ */
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CRUD: CREATE Lodha Invoice
 // ─────────────────────────────────────────────────────────────────────────────
@@ -18,65 +107,16 @@ const router = express.Router();
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             required:
- *               - invoice_number
- *             properties:
- *               company_name:              { type: string }
- *               company_address:           { type: string }
- *               company_contact_number:    { type: string }
- *               company_email:             { type: string }
- *               company_website:           { type: string }
- *               invoice_title:             { type: string }
- *               invoice_number:            { type: string }
- *               supplier_gstin:            { type: string }
- *               pan_no:                    { type: string }
- *               pf_number:                 { type: string }
- *               esic_number:               { type: string }
- *               ptr_number:                { type: string }
- *               mlwf_number:               { type: string }
- *               reverse_charge:            { type: boolean }
- *               state_name:                { type: string }
- *               state_code:                { type: string }
- *               receiver_name:             { type: string }
- *               receiver_address:          { type: string }
- *               buyer_gstin:               { type: string }
- *               ship_to_name:              { type: string }
- *               ship_to_state:             { type: string }
- *               ship_to_state_code:        { type: string }
- *               ship_to_gstin:             { type: string }
- *               project_id:                { type: integer }
- *               building_name:             { type: string }
- *               ra_number:                 { type: string }
- *               work_description:          { type: string }
- *               work_order_number:         { type: string }
- *               service_date_from:         { type: string, format: date }
- *               service_date_to:           { type: string, format: date }
- *               total_taxable_value:       { type: number }
- *               total_cgst:                { type: number }
- *               total_sgst:                { type: number }
- *               total_invoice_value:       { type: number }
- *               round_off:                 { type: number }
- *               total_invoice_value_words: { type: string }
- *               gst_on_reverse_charge:     { type: number }
- *               terms:                     { type: string }
- *               authorised_signatory:      { type: string }
- *               items:
- *                 type: array
- *                 items:
- *                   type: object
- *                   properties:
- *                     sr:                { type: integer }
- *                     description:       { type: string }
- *                     sac_code:          { type: string }
- *                     value_of_supply:   { type: number }
- *                     discount:          { type: number }
- *                     taxable_value:     { type: number }
- *                     cgst_rate:         { type: number }
- *                     cgst_amount:       { type: number }
- *                     sgst_rate:         { type: number }
- *                     sgst_amount:       { type: number }
- *                     total:             { type: number }
+ *             $ref: '#/components/schemas/LodhaInvoiceInput'
+ *     responses:
+ *       201:
+ *         description: Invoice created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/LodhaInvoice'
+ *       500:
+ *         description: Server error
  */
 router.post("/", async (req, res) => {
   const client = await pool.connect();
@@ -153,6 +193,9 @@ router.post("/", async (req, res) => {
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("Create Lodha Invoice error:", err);
+    if (err.code === "23505") {
+      return res.status(409).json({ error: `Invoice number '${req.body.invoice_number}' already exists.` });
+    }
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -171,6 +214,14 @@ router.post("/", async (req, res) => {
  *     responses:
  *       200:
  *         description: List of invoices
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/LodhaInvoice'
+ *       500:
+ *         description: Server error
  */
 router.get("/", async (req, res) => {
   try {
@@ -195,9 +246,18 @@ router.get("/", async (req, res) => {
  *         name: projectId
  *         required: true
  *         schema: { type: integer }
+ *         description: The project ID
  *     responses:
  *       200:
  *         description: List of invoices for the project
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/LodhaInvoice'
+ *       500:
+ *         description: Server error
  */
 router.get("/project/:projectId", async (req, res) => {
   try {
@@ -226,9 +286,18 @@ router.get("/project/:projectId", async (req, res) => {
  *         name: id
  *         required: true
  *         schema: { type: integer }
+ *         description: The invoice ID
  *     responses:
  *       200:
  *         description: Invoice details with items
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/LodhaInvoice'
+ *       404:
+ *         description: Invoice not found
+ *       500:
+ *         description: Server error
  */
 router.get("/:id", async (req, res) => {
   try {
@@ -261,12 +330,26 @@ router.get("/:id", async (req, res) => {
  *         name: id
  *         required: true
  *         schema: { type: integer }
+ *         description: The invoice ID
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
- *             type: object
+ *             $ref: '#/components/schemas/LodhaInvoiceInput'
+ *     responses:
+ *       200:
+ *         description: Invoice updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message: { type: string }
+ *       404:
+ *         description: Invoice not found
+ *       500:
+ *         description: Server error
  */
 router.put("/:id", async (req, res) => {
   const { id } = req.params;
@@ -347,6 +430,10 @@ router.put("/:id", async (req, res) => {
     res.json({ message: "Invoice updated successfully" });
   } catch (err) {
     await client.query("ROLLBACK");
+    console.error("Update Lodha Invoice error:", err);
+    if (err.code === "23505") {
+      return res.status(409).json({ error: `Invoice number '${req.body.invoice_number}' already exists.` });
+    }
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -367,9 +454,20 @@ router.put("/:id", async (req, res) => {
  *         name: id
  *         required: true
  *         schema: { type: integer }
+ *         description: The invoice ID
  *     responses:
  *       200:
  *         description: Deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message: { type: string }
+ *       404:
+ *         description: Invoice not found
+ *       500:
+ *         description: Server error
  */
 router.delete("/:id", async (req, res) => {
   try {
