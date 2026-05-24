@@ -7,60 +7,47 @@ CREATE TABLE IF NOT EXISTS lodha_invoices (
   invoice_id                SERIAL PRIMARY KEY,
   
   -- Company Details
+  project_id                INTEGER,
   company_name              TEXT,
   company_address           TEXT,
-  company_contact_number    TEXT,
+  company_phone             TEXT,
   company_email             TEXT,
   company_website           TEXT,
   
   -- Invoice Details
-  invoice_title             TEXT,
   invoice_number            TEXT UNIQUE NOT NULL,
-  
-  -- Tax / Statutory Details
+  invoice_date              DATE,
   supplier_gstin            TEXT,
-  pan_no                    TEXT,
-  pf_number                 TEXT,
-  esic_number               TEXT,
-  ptr_number                TEXT,
-  mlwf_number               TEXT,
   
-  -- Charge / Location Details
-  reverse_charge            BOOLEAN DEFAULT FALSE,
-  state_name                TEXT,
-  state_code                TEXT,
-  
-  -- Receiver / Buyer Details
+  -- Buyer Details
+  buyer_name                TEXT,
+  buyer_address             TEXT,
+  buyer_state_name          TEXT,
+  buyer_state_code          TEXT,
+  buyer_gstin               TEXT,
+
+  -- Receiver Details
   receiver_name             TEXT,
   receiver_address          TEXT,
-  buyer_gstin               TEXT,
-  
-  -- Shipping Details
-  ship_to_name              TEXT,
-  ship_to_state             TEXT,
-  ship_to_state_code        TEXT,
-  ship_to_gstin             TEXT,
+  place_of_supply           TEXT,
   
   -- Project / Work Details
-  project_id                INTEGER,
-  building_name             TEXT,
-  ra_number                 TEXT,
-  work_description          TEXT,
   work_order_number         TEXT,
-  service_date_from         DATE,
-  service_date_to           DATE,
+  plant_name                TEXT,
+  bill_no                   TEXT,
   
   -- Financial Totals
   total_taxable_value       NUMERIC(15, 2) NOT NULL DEFAULT 0,
   total_cgst                NUMERIC(15, 2) NOT NULL DEFAULT 0,
   total_sgst                NUMERIC(15, 2) NOT NULL DEFAULT 0,
+  total_value               NUMERIC(15, 2) NOT NULL DEFAULT 0,
   total_invoice_value       NUMERIC(15, 2) NOT NULL DEFAULT 0,
-  round_off                 NUMERIC(10, 2) NOT NULL DEFAULT 0,
   total_invoice_value_words TEXT,
-  gst_on_reverse_charge     NUMERIC(15, 2) NOT NULL DEFAULT 0,
   
   -- Footer
-  terms                     TEXT,
+  declaration               TEXT,
+  electronic_ref_number     TEXT,
+  electronic_ref_date       DATE,
   authorised_signatory      TEXT,
   
   -- Audit
@@ -73,7 +60,7 @@ CREATE TABLE IF NOT EXISTS lodha_invoice_items (
   item_id                   SERIAL PRIMARY KEY,
   invoice_id                INTEGER NOT NULL REFERENCES lodha_invoices(invoice_id) ON DELETE CASCADE,
   
-  sr                        INTEGER,
+  sn                        INTEGER,
   description               TEXT,
   sac_code                  TEXT,
   value_of_supply           NUMERIC(15, 2) NOT NULL DEFAULT 0,
@@ -83,13 +70,15 @@ CREATE TABLE IF NOT EXISTS lodha_invoice_items (
   cgst_amount               NUMERIC(15, 2) NOT NULL DEFAULT 0,
   sgst_rate                 NUMERIC(5, 2)  NOT NULL DEFAULT 0,
   sgst_amount               NUMERIC(15, 2) NOT NULL DEFAULT 0,
-  total                     NUMERIC(15, 2) NOT NULL DEFAULT 0,
+  igst_amount               NUMERIC(15, 2) NOT NULL DEFAULT 0,
+  line_total                NUMERIC(15, 2) NOT NULL DEFAULT 0,
   
   created_at                TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Index for performance
 CREATE INDEX IF NOT EXISTS idx_lodha_invoice_items_inv_id ON lodha_invoice_items(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_lodha_invoice_project_id ON lodha_invoices(project_id);
 
 -- Trigger to update updated_at on lodha_invoices
 CREATE OR REPLACE FUNCTION update_lodha_invoices_updated_at()

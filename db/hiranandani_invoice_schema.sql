@@ -10,24 +10,32 @@ CREATE TABLE IF NOT EXISTS hiranandani_invoices (
   -- Company Details
   company_name              TEXT,
   company_address           TEXT,
-  company_contact_number    TEXT,
+  company_phone             TEXT,
   company_email             TEXT,
   company_website           TEXT,
   
   -- Invoice Details
   supplier_gstin            TEXT,
+  pan_number                TEXT,
+  pf_number                 TEXT,
+  esic_number               TEXT,
+  ptr_number                TEXT,
+  mlwf_number               TEXT,
   invoice_number            TEXT UNIQUE NOT NULL,
   invoice_date              DATE,
+  reverse_charge            TEXT DEFAULT 'N',
+  supplier_state_name       TEXT DEFAULT 'MAHARASHTRA',
+  supplier_state_code       TEXT DEFAULT '27',
   
   -- Bill To Details
-  bill_to_company_name      TEXT,
+  bill_to_name              TEXT,
   bill_to_address           TEXT,
   bill_to_gstin             TEXT,
   bill_to_state             TEXT,
   bill_to_state_code        TEXT,
   
   -- Ship To Details
-  ship_to_company_name      TEXT,
+  ship_to_name              TEXT,
   ship_to_address           TEXT,
   ship_to_gstin             TEXT,
   ship_to_state             TEXT,
@@ -35,7 +43,7 @@ CREATE TABLE IF NOT EXISTS hiranandani_invoices (
   
   -- Project / Work Details
   building_name             TEXT,
-  reference_ra_number       TEXT,
+  ra_number                 TEXT,
   work_description          TEXT,
   work_order_number         TEXT,
   work_order_date           DATE,
@@ -43,14 +51,14 @@ CREATE TABLE IF NOT EXISTS hiranandani_invoices (
   service_date_to           DATE,
   
   -- Financial Totals
-  total_value_before_tax    NUMERIC(15, 2) NOT NULL DEFAULT 0,
+  total_before_tax          NUMERIC(15, 2) NOT NULL DEFAULT 0,
   total_taxable_value       NUMERIC(15, 2) NOT NULL DEFAULT 0,
   total_cgst                NUMERIC(15, 2) NOT NULL DEFAULT 0,
   total_sgst                NUMERIC(15, 2) NOT NULL DEFAULT 0,
   round_off                 NUMERIC(10, 2) NOT NULL DEFAULT 0,
   total_amount_after_tax    NUMERIC(15, 2) NOT NULL DEFAULT 0,
   gst_on_reverse_charge     NUMERIC(15, 2) NOT NULL DEFAULT 0,
-  invoice_amount_in_words   TEXT,
+  invoice_amount_words      TEXT,
   
   -- Footer
   bank_details              TEXT,
@@ -67,8 +75,8 @@ CREATE TABLE IF NOT EXISTS hiranandani_invoice_items (
   item_id                       SERIAL PRIMARY KEY,
   invoice_id                    INTEGER NOT NULL REFERENCES hiranandani_invoices(invoice_id) ON DELETE CASCADE,
   
-  serial_number                 INTEGER,
-  goods_or_service_description  TEXT,
+  sn                            INTEGER,
+  description                   TEXT,
   sac_code                      TEXT,
   value_of_supply               NUMERIC(15, 2) NOT NULL DEFAULT 0,
   discount                      NUMERIC(15, 2) NOT NULL DEFAULT 0,
@@ -77,10 +85,7 @@ CREATE TABLE IF NOT EXISTS hiranandani_invoice_items (
   cgst_amount                   NUMERIC(15, 2) NOT NULL DEFAULT 0,
   sgst_rate                     NUMERIC(5, 2)  NOT NULL DEFAULT 0,
   sgst_amount                   NUMERIC(15, 2) NOT NULL DEFAULT 0,
-  igst_rate                     NUMERIC(5, 2)  NOT NULL DEFAULT 0,
-  igst_amount                   NUMERIC(15, 2) NOT NULL DEFAULT 0,
-  cess_rate                     NUMERIC(5, 2)  NOT NULL DEFAULT 0,
-  cess_amount                   NUMERIC(15, 2) NOT NULL DEFAULT 0,
+  line_total                    NUMERIC(15, 2) NOT NULL DEFAULT 0,
   
   created_at                    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
