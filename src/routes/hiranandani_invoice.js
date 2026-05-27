@@ -6,69 +6,79 @@ const router = express.Router();
 
 function normalizeHiranandaniItem(item = {}) {
   return {
-    sn: item.sn ?? item.serial_number ?? null,
-    description: item.description ?? item.goods_or_service_description ?? null,
-    sac_code: item.sac_code ?? null,
-    value_of_supply: item.value_of_supply ?? 0,
+    sn: item.sn ?? item.sNo ?? item.serial_number ?? null,
+    description: item.description ?? item.goodsServiceDescription ?? item.goods_or_service_description ?? null,
+    sac_code: item.sac_code ?? item.sacCode ?? null,
+    value_of_supply: item.value_of_supply ?? item.valueOfSupply ?? 0,
     discount: item.discount ?? 0,
-    taxable_value: item.taxable_value ?? 0,
-    cgst_rate: item.cgst_rate ?? 0,
-    cgst_amount: item.cgst_amount ?? 0,
-    sgst_rate: item.sgst_rate ?? 0,
-    sgst_amount: item.sgst_amount ?? 0,
+    taxable_value: item.taxable_value ?? item.taxableValue ?? 0,
+    cgst_rate: item.cgst_rate ?? (item.cgst ? item.cgst.rate : 0) ?? 0,
+    cgst_amount: item.cgst_amount ?? (item.cgst ? item.cgst.amount : 0) ?? 0,
+    sgst_rate: item.sgst_rate ?? (item.sgst ? item.sgst.rate : 0) ?? 0,
+    sgst_amount: item.sgst_amount ?? (item.sgst ? item.sgst.amount : 0) ?? 0,
     line_total: item.line_total ?? item.total ?? 0,
   };
 }
 
 function normalizeHiranandaniInvoicePayload(body = {}) {
+  // Support both nested structure (user's new request) and flat structure (previous)
+  const inv = body.invoice || body;
+  const seller = inv.seller || {};
+  const compliance = inv.complianceDetails || {};
+  const billTo = inv.billToParty || {};
+  const shipTo = inv.shipToPartySite || {};
+  const reference = inv.referenceDetails || {};
+  const summary = inv.summary || {};
+
   return {
-    project_id: body.project_id ?? null,
-    company_name: body.company_name ?? null,
-    company_address: body.company_address ?? null,
-    company_phone: body.company_phone ?? body.company_contact_number ?? null,
-    company_email: body.company_email ?? null,
-    company_website: body.company_website ?? null,
-    supplier_gstin: body.supplier_gstin ?? null,
-    pan_number: body.pan_number ?? body.pan_no ?? null,
-    pf_number: body.pf_number ?? null,
-    esic_number: body.esic_number ?? null,
-    ptr_number: body.ptr_number ?? null,
-    mlwf_number: body.mlwf_number ?? null,
-    invoice_number: body.invoice_number ?? null,
-    invoice_date: body.invoice_date ?? null,
-    reverse_charge: body.reverse_charge ?? null,
-    supplier_state_name: body.supplier_state_name ?? null,
-    supplier_state_code: body.supplier_state_code ?? null,
-    bill_to_name: body.bill_to_name ?? body.bill_to_company_name ?? null,
-    bill_to_address: body.bill_to_address ?? null,
-    bill_to_gstin: body.bill_to_gstin ?? null,
-    bill_to_state: body.bill_to_state ?? null,
-    bill_to_state_code: body.bill_to_state_code ?? null,
-    ship_to_name: body.ship_to_name ?? body.ship_to_company_name ?? null,
-    ship_to_address: body.ship_to_address ?? null,
-    ship_to_gstin: body.ship_to_gstin ?? null,
-    ship_to_state: body.ship_to_state ?? null,
-    ship_to_state_code: body.ship_to_state_code ?? null,
-    building_name: body.building_name ?? null,
-    ra_number: body.ra_number ?? body.reference_ra_number ?? null,
-    work_description: body.work_description ?? null,
-    work_order_number: body.work_order_number ?? null,
-    service_date_from: body.service_date_from ?? null,
-    service_date_to: body.service_date_to ?? null,
-    total_before_tax: body.total_before_tax ?? body.total_value_before_tax ?? 0,
-    total_taxable_value: body.total_taxable_value ?? 0,
-    total_cgst: body.total_cgst ?? 0,
-    total_sgst: body.total_sgst ?? 0,
-    round_off: body.round_off ?? 0,
-    total_amount_after_tax: body.total_amount_after_tax ?? 0,
-    gst_on_reverse_charge: body.gst_on_reverse_charge ?? 0,
-    invoice_amount_words: body.invoice_amount_words ?? body.invoice_amount_in_words ?? null,
-    bank_details: body.bank_details ?? null,
-    terms_and_conditions: body.terms_and_conditions ?? null,
-    authorised_signatory: body.authorised_signatory ?? null,
-    user_id: body.user_id ?? null,
-    user_name: body.user_name ?? null,
-    items: Array.isArray(body.items) ? body.items.map(normalizeHiranandaniItem) : [],
+    project_id: body.project_id ?? inv.project_id ?? null,
+    company_name: seller.name ?? inv.company_name ?? null,
+    company_address: inv.company_address ?? null,
+    company_phone: inv.company_phone ?? inv.company_contact_number ?? null,
+    company_email: inv.company_email ?? null,
+    company_website: inv.company_website ?? null,
+    supplier_gstin: seller.gstin ?? inv.supplier_gstin ?? null,
+    pan_number: seller.panNo ?? inv.pan_number ?? inv.pan_no ?? null,
+    pf_number: compliance.pfNo ?? inv.pf_number ?? null,
+    esic_number: compliance.esicNo ?? inv.esic_number ?? null,
+    ptr_number: compliance.ptrNo ?? inv.ptr_number ?? null,
+    mlwf_number: compliance.mlwfNo ?? inv.mlwf_number ?? null,
+    invoice_number: inv.invoiceNo ?? inv.invoice_number ?? null,
+    invoice_date: inv.invoiceDate ?? inv.invoice_date ?? null,
+    reverse_charge: inv.reverseCharge ?? inv.reverse_charge ?? null,
+    supplier_state_name: inv.state ?? inv.supplier_state_name ?? null,
+    supplier_state_code: inv.stateCode ?? inv.supplier_state_code ?? null,
+    bill_to_name: billTo.coAccountName ?? inv.bill_to_name ?? inv.bill_to_company_name ?? null,
+    bill_to_address: billTo.address ?? inv.bill_to_address ?? null,
+    bill_to_gstin: billTo.gstin ?? inv.bill_to_gstin ?? null,
+    bill_to_state: billTo.state ?? inv.bill_to_state ?? null,
+    bill_to_state_code: billTo.stateCode ?? inv.bill_to_state_code ?? null,
+    ship_to_name: shipTo.coAccountName ?? inv.ship_to_name ?? inv.ship_to_company_name ?? null,
+    ship_to_address: inv.ship_to_address ?? null,
+    ship_to_gstin: shipTo.gstin ?? inv.ship_to_gstin ?? null,
+    ship_to_state: shipTo.state ?? inv.ship_to_state ?? null,
+    ship_to_state_code: shipTo.stateCode ?? inv.ship_to_state_code ?? null,
+    building_name: shipTo.buildingName ?? inv.building_name ?? null,
+    ra_number: reference.raNo ?? inv.ra_number ?? inv.reference_ra_number ?? null,
+    work_description: reference.workDescription ?? inv.work_description ?? null,
+    work_order_number: reference.woNo ?? inv.work_order_number ?? null,
+    work_order_date: reference.woDate ?? inv.work_order_date ?? null,
+    service_date_from: reference.serviceDateFrom ?? inv.service_date_from ?? null,
+    service_date_to: reference.serviceDateTo ?? inv.service_date_to ?? null,
+    total_before_tax: summary.totalAmountBeforeTax ?? inv.total_before_tax ?? inv.total_value_before_tax ?? 0,
+    total_taxable_value: inv.total_taxable_value ?? 0,
+    total_cgst: summary.addCgst ?? inv.total_cgst ?? 0,
+    total_sgst: summary.addSgst ?? inv.total_sgst ?? 0,
+    round_off: summary.roundOff ?? inv.round_off ?? 0,
+    total_amount_after_tax: summary.totalAmountAfterTax ?? inv.total_amount_after_tax ?? 0,
+    gst_on_reverse_charge: summary.gstOnReverseCharge ?? inv.gst_on_reverse_charge ?? 0,
+    invoice_amount_words: summary.totalInvoiceAmountInWords ?? inv.invoice_amount_words ?? inv.invoice_amount_in_words ?? null,
+    bank_details: inv.bankDetails ?? inv.bank_details ?? null,
+    terms_and_conditions: inv.terms_and_conditions ?? null,
+    authorised_signatory: inv.authorisedSignatory ?? inv.authorised_signatory ?? null,
+    user_id: body.user_id ?? inv.user_id ?? null,
+    user_name: body.user_name ?? inv.user_name ?? null,
+    items: Array.isArray(inv.lineItems) ? inv.lineItems.map(normalizeHiranandaniItem) : (Array.isArray(inv.items) ? inv.items.map(normalizeHiranandaniItem) : []),
   };
 }
 
@@ -108,6 +118,7 @@ function formatHiranandaniInvoiceRow(row) {
     ra_number: row.ra_number,
     work_description: row.work_description,
     work_order_number: row.work_order_number,
+    work_order_date: row.work_order_date,
     service_date_from: row.service_date_from,
     service_date_to: row.service_date_to,
     total_before_tax: row.total_before_tax,
@@ -151,17 +162,23 @@ function formatHiranandaniInvoiceItemRow(row) {
  *     HiranandaniInvoiceItemInput:
  *       type: object
  *       properties:
- *         sn:                            { type: integer }
- *         description:                   { type: string }
- *         sac_code:                      { type: string }
- *         value_of_supply:               { type: number }
+ *         sNo:                           { type: integer }
+ *         goodsServiceDescription:       { type: string }
+ *         sacCode:                       { type: string }
+ *         valueOfSupply:                 { type: number }
  *         discount:                      { type: number }
- *         taxable_value:                 { type: number }
- *         cgst_rate:                     { type: number }
- *         cgst_amount:                   { type: number }
- *         sgst_rate:                     { type: number }
- *         sgst_amount:                   { type: number }
- *         line_total:                    { type: number }
+ *         taxableValue:                  { type: number }
+ *         cgst:
+ *           type: object
+ *           properties:
+ *             rate:   { type: number }
+ *             amount: { type: number }
+ *         sgst:
+ *           type: object
+ *           properties:
+ *             rate:   { type: number }
+ *             amount: { type: number }
+ *         total:                         { type: number }
  *     HiranandaniInvoiceItem:
  *       allOf:
  *         - $ref: '#/components/schemas/HiranandaniInvoiceItemInput'
@@ -171,59 +188,84 @@ function formatHiranandaniInvoiceItemRow(row) {
  *             invoice_id: { type: integer }
  *     HiranandaniInvoiceInput:
  *       type: object
- *       required:
- *         - invoice_number
  *       properties:
- *         project_id:               { type: integer }
- *         company_name:             { type: string }
- *         company_address:          { type: string }
- *         company_phone:            { type: string }
- *         company_email:            { type: string }
- *         company_website:          { type: string }
- *         supplier_gstin:           { type: string }
- *         pan_number:               { type: string }
- *         pf_number:                { type: string }
- *         esic_number:              { type: string }
- *         ptr_number:               { type: string }
- *         mlwf_number:              { type: string }
- *         invoice_number:           { type: string }
- *         invoice_date:             { type: string, format: date }
- *         reverse_charge:           { type: string }
- *         supplier_state_name:      { type: string }
- *         supplier_state_code:      { type: string }
- *         bill_to_name:             { type: string }
- *         bill_to_address:          { type: string }
- *         bill_to_gstin:            { type: string }
- *         bill_to_state:            { type: string }
- *         bill_to_state_code:       { type: string }
- *         ship_to_name:             { type: string }
- *         ship_to_address:          { type: string }
- *         ship_to_gstin:            { type: string }
- *         ship_to_state:            { type: string }
- *         ship_to_state_code:       { type: string }
- *         building_name:            { type: string }
- *         ra_number:                { type: string }
- *         work_description:         { type: string }
- *         work_order_number:        { type: string }
- *         service_date_from:        { type: string, format: date }
- *         service_date_to:          { type: string, format: date }
- *         total_before_tax:         { type: number }
- *         total_taxable_value:      { type: number }
- *         total_cgst:               { type: number }
- *         total_sgst:               { type: number }
- *         round_off:                { type: number }
- *         total_amount_after_tax:   { type: number }
- *         gst_on_reverse_charge:    { type: number }
- *         invoice_amount_words:     { type: string }
- *         bank_details:             { type: string }
- *         terms_and_conditions:     { type: string }
- *         authorised_signatory:     { type: string }
- *         user_id:                  { type: string }
- *         user_name:                { type: string }
- *         items:
- *           type: array
- *           items:
- *             $ref: '#/components/schemas/HiranandaniInvoiceItemInput'
+ *         invoice:
+ *           type: object
+ *           required:
+ *             - invoiceNo
+ *           properties:
+ *             invoiceNo:      { type: string }
+ *             invoiceDate:    { type: string, format: date }
+ *             reverseCharge:  { type: string }
+ *             state:          { type: string }
+ *             stateCode:      { type: string }
+ *             seller:
+ *               type: object
+ *               properties:
+ *                 name:   { type: string }
+ *                 gstin:  { type: string }
+ *                 panNo:  { type: string }
+ *             complianceDetails:
+ *               type: object
+ *               properties:
+ *                 pfNo:   { type: string }
+ *                 esicNo: { type: string }
+ *                 ptrNo:  { type: string }
+ *                 mlwfNo: { type: string }
+ *             billToParty:
+ *               type: object
+ *               properties:
+ *                 coAccountName: { type: string }
+ *                 address:       { type: string }
+ *                 gstin:         { type: string }
+ *                 state:         { type: string }
+ *                 stateCode:     { type: string }
+ *             shipToPartySite:
+ *               type: object
+ *               properties:
+ *                 coAccountName: { type: string }
+ *                 gstin:         { type: string }
+ *                 state:         { type: string }
+ *                 stateCode:     { type: string }
+ *                 buildingName:  { type: string }
+ *             referenceDetails:
+ *               type: object
+ *               properties:
+ *                 raNo:            { type: string }
+ *                 workDescription: { type: string }
+ *                 woNo:            { type: string }
+ *                 woDate:          { type: string, format: date }
+ *                 serviceDateFrom: { type: string, format: date }
+ *                 serviceDateTo:   { type: string, format: date }
+ *             lineItems:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/HiranandaniInvoiceItemInput'
+ *             totals:
+ *               type: object
+ *               properties:
+ *                 totalValueOfSupply: { type: number }
+ *                 totalDiscount:      { type: number }
+ *                 totalTaxableValue:  { type: number }
+ *                 totalCgstAmount:    { type: number }
+ *                 totalSgstAmount:    { type: number }
+ *                 totalAmount:        { type: number }
+ *             summary:
+ *               type: object
+ *               properties:
+ *                 totalInvoiceAmountInWords: { type: string }
+ *                 totalAmountBeforeTax:      { type: number }
+ *                 addCgst:                   { type: number }
+ *                 addSgst:                   { type: number }
+ *                 roundOff:                  { type: number }
+ *                 totalAmountAfterTax:       { type: number }
+ *                 gstOnReverseCharge:        { type: number }
+ *                 eAndOE:                    { type: boolean }
+ *             bankDetails:             { type: string }
+ *             authorisedSignatory:     { type: string }
+ *         project_id: { type: integer }
+ *         user_id:    { type: string }
+ *         user_name:  { type: string }
  *     HiranandaniInvoice:
  *       allOf:
  *         - $ref: '#/components/schemas/HiranandaniInvoiceInput'
@@ -274,7 +316,7 @@ router.post("/", async (req, res) => {
       bill_to_name, bill_to_address, bill_to_gstin, bill_to_state, bill_to_state_code,
       ship_to_name, ship_to_address, ship_to_gstin, ship_to_state, ship_to_state_code,
       building_name, ra_number, work_description,
-      work_order_number, service_date_from, service_date_to,
+      work_order_number, work_order_date, service_date_from, service_date_to,
       total_before_tax, total_taxable_value, total_cgst, total_sgst, round_off,
       total_amount_after_tax, gst_on_reverse_charge, invoice_amount_words,
       bank_details, terms_and_conditions, authorised_signatory,
@@ -288,11 +330,11 @@ router.post("/", async (req, res) => {
         invoice_number, invoice_date, reverse_charge, supplier_state_name, supplier_state_code,
         bill_to_name, bill_to_address, bill_to_gstin, bill_to_state, bill_to_state_code,
         ship_to_name, ship_to_address, ship_to_gstin, ship_to_state, ship_to_state_code,
-        building_name, ra_number, work_description, work_order_number, service_date_from, service_date_to,
+        building_name, ra_number, work_description, work_order_number, work_order_date, service_date_from, service_date_to,
         total_before_tax, total_taxable_value, total_cgst, total_sgst, round_off,
         total_amount_after_tax, gst_on_reverse_charge, invoice_amount_words,
         bank_details, terms_and_conditions, authorised_signatory
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45)
       RETURNING *`,
       [
         project_id, company_name, company_address, company_phone, company_email, company_website,
@@ -300,7 +342,7 @@ router.post("/", async (req, res) => {
         invoice_number, invoice_date || null, reverse_charge, supplier_state_name, supplier_state_code,
         bill_to_name, bill_to_address, bill_to_gstin, bill_to_state, bill_to_state_code,
         ship_to_name, ship_to_address, ship_to_gstin, ship_to_state, ship_to_state_code,
-        building_name, ra_number, work_description, work_order_number, service_date_from || null, service_date_to || null,
+        building_name, ra_number, work_description, work_order_number, work_order_date || null, service_date_from || null, service_date_to || null,
         total_before_tax || 0, total_taxable_value || 0, total_cgst || 0, total_sgst || 0, round_off || 0,
         total_amount_after_tax || 0, gst_on_reverse_charge || 0, invoice_amount_words,
         bank_details, terms_and_conditions, authorised_signatory
@@ -515,7 +557,7 @@ router.put("/:id", async (req, res) => {
       bill_to_name, bill_to_address, bill_to_gstin, bill_to_state, bill_to_state_code,
       ship_to_name, ship_to_address, ship_to_gstin, ship_to_state, ship_to_state_code,
       building_name, ra_number, work_description,
-      work_order_number, service_date_from, service_date_to,
+      work_order_number, work_order_date, service_date_from, service_date_to,
       total_before_tax, total_taxable_value, total_cgst, total_sgst, round_off,
       total_amount_after_tax, gst_on_reverse_charge, invoice_amount_words,
       bank_details, terms_and_conditions, authorised_signatory,
@@ -529,12 +571,12 @@ router.put("/:id", async (req, res) => {
         invoice_number=$13, invoice_date=$14, reverse_charge=$15, supplier_state_name=$16, supplier_state_code=$17,
         bill_to_name=$18, bill_to_address=$19, bill_to_gstin=$20, bill_to_state=$21, bill_to_state_code=$22,
         ship_to_name=$23, ship_to_address=$24, ship_to_gstin=$25, ship_to_state=$26, ship_to_state_code=$27,
-        building_name=$28, ra_number=$29, work_description=$30, work_order_number=$31, service_date_from=$32, service_date_to=$33,
-        total_before_tax=$34, total_taxable_value=$35, total_cgst=$36, total_sgst=$37, round_off=$38,
-        total_amount_after_tax=$39, gst_on_reverse_charge=$40, invoice_amount_words=$41,
-        bank_details=$42, terms_and_conditions=$43, authorised_signatory=$44,
+        building_name=$28, ra_number=$29, work_description=$30, work_order_number=$31, work_order_date=$32, service_date_from=$33, service_date_to=$34,
+        total_before_tax=$35, total_taxable_value=$36, total_cgst=$37, total_sgst=$38, round_off=$39,
+        total_amount_after_tax=$40, gst_on_reverse_charge=$41, invoice_amount_words=$42,
+        bank_details=$43, terms_and_conditions=$44, authorised_signatory=$45,
         updated_at=NOW()
-      WHERE invoice_id = $45
+      WHERE invoice_id = $46
       RETURNING *`,
       [
         project_id, company_name, company_address, company_phone, company_email, company_website,
@@ -542,7 +584,7 @@ router.put("/:id", async (req, res) => {
         invoice_number, invoice_date || null, reverse_charge, supplier_state_name, supplier_state_code,
         bill_to_name, bill_to_address, bill_to_gstin, bill_to_state, bill_to_state_code,
         ship_to_name, ship_to_address, ship_to_gstin, ship_to_state, ship_to_state_code,
-        building_name, ra_number, work_description, work_order_number, service_date_from || null, service_date_to || null,
+        building_name, ra_number, work_description, work_order_number, work_order_date || null, service_date_from || null, service_date_to || null,
         total_before_tax, total_taxable_value, total_cgst, total_sgst, round_off,
         total_amount_after_tax, gst_on_reverse_charge, invoice_amount_words,
         bank_details, terms_and_conditions, authorised_signatory,

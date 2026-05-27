@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS lodha_invoices (
   
   -- Project / Work Details
   work_order_number         TEXT,
+  work_order_date           DATE,
   plant_name                TEXT,
   bill_no                   TEXT,
   
@@ -40,6 +41,8 @@ CREATE TABLE IF NOT EXISTS lodha_invoices (
   total_taxable_value       NUMERIC(15, 2) NOT NULL DEFAULT 0,
   total_cgst                NUMERIC(15, 2) NOT NULL DEFAULT 0,
   total_sgst                NUMERIC(15, 2) NOT NULL DEFAULT 0,
+  total_igst                NUMERIC(15, 2) NOT NULL DEFAULT 0,
+  total_cess                NUMERIC(15, 2) NOT NULL DEFAULT 0,
   total_value               NUMERIC(15, 2) NOT NULL DEFAULT 0,
   total_invoice_value       NUMERIC(15, 2) NOT NULL DEFAULT 0,
   total_invoice_value_words TEXT,
@@ -63,6 +66,9 @@ CREATE TABLE IF NOT EXISTS lodha_invoice_items (
   sn                        INTEGER,
   description               TEXT,
   sac_code                  TEXT,
+  uom                       TEXT,
+  quantity                  NUMERIC(15, 2),
+  rate                      NUMERIC(15, 2),
   value_of_supply           NUMERIC(15, 2) NOT NULL DEFAULT 0,
   discount                  NUMERIC(15, 2) NOT NULL DEFAULT 0,
   taxable_value             NUMERIC(15, 2) NOT NULL DEFAULT 0,
@@ -70,7 +76,10 @@ CREATE TABLE IF NOT EXISTS lodha_invoice_items (
   cgst_amount               NUMERIC(15, 2) NOT NULL DEFAULT 0,
   sgst_rate                 NUMERIC(5, 2)  NOT NULL DEFAULT 0,
   sgst_amount               NUMERIC(15, 2) NOT NULL DEFAULT 0,
+  igst_rate                 NUMERIC(5, 2)  NOT NULL DEFAULT 0,
   igst_amount               NUMERIC(15, 2) NOT NULL DEFAULT 0,
+  cess_rate                 NUMERIC(5, 2)  NOT NULL DEFAULT 0,
+  cess_amount               NUMERIC(15, 2) NOT NULL DEFAULT 0,
   line_total                NUMERIC(15, 2) NOT NULL DEFAULT 0,
   
   created_at                TIMESTAMPTZ NOT NULL DEFAULT NOW()

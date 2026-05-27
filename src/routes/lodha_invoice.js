@@ -7,55 +7,71 @@ const router = express.Router();
 function normalizeLodhaItem(item = {}) {
   return {
     sn: item.sn ?? item.sr ?? item.serial_number ?? null,
-    description: item.description ?? item.goods_or_service_description ?? null,
-    sac_code: item.sac_code ?? null,
-    value_of_supply: item.value_of_supply ?? 0,
-    discount: item.discount ?? 0,
+    description: item.description ?? item.descriptionOfServiceGoods ?? item.goods_or_service_description ?? null,
+    sac_code: item.sac_code ?? item.sacHsnCode ?? null,
+    uom: item.uom ?? null,
+    quantity: item.quantity ?? item.qty ?? null,
+    rate: item.rate ?? null,
+    value_of_supply: item.value_of_supply ?? item.totalValueOfGoods ?? 0,
+    discount: item.discount ?? item.discountIf ?? 0,
     taxable_value: item.taxable_value ?? 0,
-    cgst_rate: item.cgst_rate ?? 0,
-    cgst_amount: item.cgst_amount ?? 0,
-    sgst_rate: item.sgst_rate ?? 0,
-    sgst_amount: item.sgst_amount ?? 0,
-    igst_amount: item.igst_amount ?? 0,
+    cgst_rate: item.cgst_rate ?? (item.cgst ? item.cgst.rate : 0) ?? 0,
+    cgst_amount: item.cgst_amount ?? (item.cgst ? item.cgst.amount : 0) ?? 0,
+    sgst_rate: item.sgst_rate ?? (item.sgst ? item.sgst.rate : 0) ?? 0,
+    sgst_amount: item.sgst_amount ?? (item.sgst ? item.sgst.amount : 0) ?? 0,
+    igst_rate: item.igst_rate ?? (item.igst ? item.igst.rate : 0) ?? 0,
+    igst_amount: item.igst_amount ?? (item.igst ? item.igst.amount : 0) ?? 0,
+    cess_rate: item.cess_rate ?? (item.cess ? item.cess.rate : 0) ?? 0,
+    cess_amount: item.cess_amount ?? (item.cess ? item.cess.amount : 0) ?? 0,
     line_total: item.line_total ?? item.total ?? 0,
   };
 }
 
 function normalizeLodhaInvoicePayload(body = {}) {
+  // Support both nested structure (user's new request) and flat structure (previous)
+  const inv = body.invoice || body;
+  const buyer = inv.buyer || {};
+  const receiver = inv.receiverDetails || {};
+  const workOrder = inv.workOrderDetails || {};
+  const totals = inv.totals || {};
+
   return {
-    company_name: body.company_name ?? null,
-    company_address: body.company_address ?? null,
-    company_phone: body.company_phone ?? body.company_contact_number ?? null,
-    company_email: body.company_email ?? null,
-    company_website: body.company_website ?? null,
-    supplier_gstin: body.supplier_gstin ?? null,
-    invoice_number: body.invoice_number ?? null,
-    invoice_date: body.invoice_date ?? null,
-    buyer_name: body.buyer_name ?? body.bill_to_name ?? null,
-    buyer_address: body.buyer_address ?? body.bill_to_address ?? null,
-    buyer_state_name: body.buyer_state_name ?? body.bill_to_state ?? null,
-    buyer_state_code: body.buyer_state_code ?? body.bill_to_state_code ?? null,
-    buyer_gstin: body.buyer_gstin ?? body.bill_to_gstin ?? null,
-    receiver_name: body.receiver_name ?? body.ship_to_name ?? null,
-    receiver_address: body.receiver_address ?? body.ship_to_address ?? null,
-    place_of_supply: body.place_of_supply ?? null,
-    work_order_number: body.work_order_number ?? null,
-    plant_name: body.plant_name ?? body.building_name ?? null,
-    bill_no: body.bill_no ?? body.ra_number ?? null,
-    total_taxable_value: body.total_taxable_value ?? 0,
-    total_cgst: body.total_cgst ?? 0,
-    total_sgst: body.total_sgst ?? 0,
-    total_value: body.total_value ?? body.total_invoice_value ?? 0,
-    total_invoice_value: body.total_invoice_value ?? 0,
-    total_invoice_value_words: body.total_invoice_value_words ?? null,
-    declaration: body.declaration ?? body.terms ?? null,
-    electronic_ref_number: body.electronic_ref_number ?? null,
-    electronic_ref_date: body.electronic_ref_date ?? null,
-    authorised_signatory: body.authorised_signatory ?? null,
-    project_id: body.project_id ?? null,
-    user_id: body.user_id ?? null,
-    user_name: body.user_name ?? null,
-    items: Array.isArray(body.items) ? body.items.map(normalizeLodhaItem) : [],
+    company_name: inv.company_name ?? null,
+    company_address: inv.company_address ?? null,
+    company_phone: inv.company_phone ?? inv.company_contact_number ?? null,
+    company_email: inv.company_email ?? null,
+    company_website: inv.company_website ?? inv.website ?? null,
+    supplier_gstin: inv.supplier_gstin ?? inv.gstin ?? null,
+    invoice_number: inv.invoice_number ?? inv.invoiceNo ?? null,
+    invoice_date: inv.invoice_date ?? inv.invoiceDate ?? null,
+    buyer_name: buyer.name ?? inv.buyer_name ?? inv.bill_to_name ?? null,
+    buyer_address: buyer.address ?? inv.buyer_address ?? inv.bill_to_address ?? null,
+    buyer_state_name: buyer.stateName ?? inv.buyer_state_name ?? inv.bill_to_state ?? null,
+    buyer_state_code: buyer.stateCode ?? inv.buyer_state_code ?? inv.bill_to_state_code ?? null,
+    buyer_gstin: buyer.gstin ?? inv.buyer_gstin ?? inv.bill_to_gstin ?? null,
+    receiver_name: receiver.name ?? inv.receiver_name ?? inv.ship_to_name ?? null,
+    receiver_address: receiver.address ?? inv.receiver_address ?? inv.ship_to_address ?? null,
+    place_of_supply: receiver.placeOfSupply ?? inv.place_of_supply ?? null,
+    work_order_number: workOrder.woNo ?? inv.work_order_number ?? null,
+    work_order_date: workOrder.woDate ?? inv.work_order_date ?? null,
+    plant_name: workOrder.plantName ?? inv.plant_name ?? inv.building_name ?? null,
+    bill_no: workOrder.billNo ?? inv.bill_no ?? inv.ra_number ?? null,
+    total_taxable_value: totals.totalTaxableValue ?? inv.total_taxable_value ?? 0,
+    total_cgst: totals.totalCgstAmount ?? inv.total_cgst ?? 0,
+    total_sgst: totals.totalSgstAmount ?? inv.total_sgst ?? 0,
+    total_igst: totals.totalIgstAmount ?? inv.total_igst ?? 0,
+    total_cess: totals.totalCessAmount ?? inv.total_cess ?? 0,
+    total_value: inv.total_value ?? inv.total_invoice_value ?? 0,
+    total_invoice_value: totals.totalInvoiceValueFigure ?? inv.total_invoice_value ?? 0,
+    total_invoice_value_words: totals.totalInvoiceValueWords ?? inv.total_invoice_value_words ?? null,
+    declaration: inv.declaration ?? inv.terms ?? null,
+    electronic_ref_number: inv.electronic_ref_number ?? inv.electronicReferenceNumber ?? null,
+    electronic_ref_date: inv.electronic_ref_date ?? null,
+    authorised_signatory: inv.authorised_signatory ?? inv.authorisedSignatory ?? null,
+    project_id: body.project_id ?? inv.project_id ?? null,
+    user_id: body.user_id ?? inv.user_id ?? null,
+    user_name: body.user_name ?? inv.user_name ?? null,
+    items: Array.isArray(inv.lineItems) ? inv.lineItems.map(normalizeLodhaItem) : (Array.isArray(inv.items) ? inv.items.map(normalizeLodhaItem) : []),
   };
 }
 
@@ -82,11 +98,14 @@ function formatLodhaInvoiceRow(row) {
     receiver_address: row.receiver_address,
     place_of_supply: row.place_of_supply,
     work_order_number: row.work_order_number,
+    work_order_date: row.work_order_date,
     plant_name: row.plant_name,
     bill_no: row.bill_no,
     total_taxable_value: row.total_taxable_value,
     total_cgst: row.total_cgst,
     total_sgst: row.total_sgst,
+    total_igst: row.total_igst,
+    total_cess: row.total_cess,
     total_value: row.total_value,
     total_invoice_value: row.total_invoice_value,
     total_invoice_value_words: row.total_invoice_value_words,
@@ -106,6 +125,9 @@ function formatLodhaInvoiceItemRow(row) {
     sn: row.sn,
     description: row.description,
     sac_code: row.sac_code,
+    uom: row.uom,
+    quantity: row.quantity,
+    rate: row.rate,
     value_of_supply: row.value_of_supply,
     discount: row.discount,
     taxable_value: row.taxable_value,
@@ -113,7 +135,10 @@ function formatLodhaInvoiceItemRow(row) {
     cgst_amount: row.cgst_amount,
     sgst_rate: row.sgst_rate,
     sgst_amount: row.sgst_amount,
+    igst_rate: row.igst_rate,
     igst_amount: row.igst_amount,
+    cess_rate: row.cess_rate,
+    cess_amount: row.cess_amount,
     line_total: row.line_total,
   };
 }
@@ -125,18 +150,36 @@ function formatLodhaInvoiceItemRow(row) {
  *     LodhaInvoiceItemInput:
  *       type: object
  *       properties:
- *         sn:                { type: integer }
- *         description:       { type: string }
- *         sac_code:          { type: string }
- *         value_of_supply:   { type: number }
- *         discount:          { type: number }
- *         taxable_value:     { type: number }
- *         cgst_rate:         { type: number }
- *         cgst_amount:       { type: number }
- *         sgst_rate:         { type: number }
- *         sgst_amount:       { type: number }
- *         igst_amount:       { type: number }
- *         line_total:        { type: number }
+ *         sn:                        { type: integer }
+ *         descriptionOfServiceGoods: { type: string }
+ *         sacHsnCode:                { type: string }
+ *         uom:                       { type: string }
+ *         qty:                       { type: number }
+ *         rate:                      { type: number }
+ *         totalValueOfGoods:         { type: number }
+ *         discountIf:                { type: number }
+ *         taxableValue:              { type: number }
+ *         cgst:
+ *           type: object
+ *           properties:
+ *             rate:   { type: number }
+ *             amount: { type: number }
+ *         sgst:
+ *           type: object
+ *           properties:
+ *             rate:   { type: number }
+ *             amount: { type: number }
+ *         igst:
+ *           type: object
+ *           properties:
+ *             rate:   { type: number }
+ *             amount: { type: number }
+ *         cess:
+ *           type: object
+ *           properties:
+ *             rate:   { type: number }
+ *             amount: { type: number }
+ *         line_total:                { type: number }
  *     LodhaInvoiceItem:
  *       allOf:
  *         - $ref: '#/components/schemas/LodhaInvoiceItemInput'
@@ -146,45 +189,57 @@ function formatLodhaInvoiceItemRow(row) {
  *             invoice_id: { type: integer }
  *     LodhaInvoiceInput:
  *       type: object
- *       required:
- *         - invoice_number
  *       properties:
- *         project_id:                { type: integer }
- *         company_name:              { type: string }
- *         company_address:           { type: string }
- *         company_phone:             { type: string }
- *         company_email:             { type: string }
- *         company_website:           { type: string }
- *         supplier_gstin:            { type: string }
- *         invoice_number:            { type: string }
- *         invoice_date:              { type: string, format: date }
- *         buyer_name:                { type: string }
- *         buyer_address:             { type: string }
- *         buyer_state_name:          { type: string }
- *         buyer_state_code:          { type: string }
- *         buyer_gstin:               { type: string }
- *         receiver_name:             { type: string }
- *         receiver_address:          { type: string }
- *         place_of_supply:           { type: string }
- *         work_order_number:         { type: string }
- *         plant_name:                { type: string }
- *         bill_no:                   { type: string }
- *         total_taxable_value:       { type: number }
- *         total_cgst:                { type: number }
- *         total_sgst:                { type: number }
- *         total_value:               { type: number }
- *         total_invoice_value:       { type: number }
- *         total_invoice_value_words: { type: string }
- *         declaration:               { type: string }
- *         electronic_ref_number:     { type: string }
- *         electronic_ref_date:       { type: string, format: date }
- *         authorised_signatory:      { type: string }
- *         user_id:                   { type: string }
- *         user_name:                 { type: string }
- *         items:
- *           type: array
- *           items:
- *             $ref: '#/components/schemas/LodhaInvoiceItemInput'
+ *         invoice:
+ *           type: object
+ *           required:
+ *             - invoiceNo
+ *           properties:
+ *             invoiceNo:      { type: string }
+ *             invoiceDate:    { type: string, format: date }
+ *             gstin:          { type: string }
+ *             website:        { type: string }
+ *             buyer:
+ *               type: object
+ *               properties:
+ *                 name:      { type: string }
+ *                 address:   { type: string }
+ *                 stateName: { type: string }
+ *                 stateCode: { type: string }
+ *                 gstin:     { type: string }
+ *             receiverDetails:
+ *               type: object
+ *               properties:
+ *                 name:          { type: string }
+ *                 address:       { type: string }
+ *                 placeOfSupply: { type: string }
+ *             workOrderDetails:
+ *               type: object
+ *               properties:
+ *                 woNo:      { type: string }
+ *                 woDate:    { type: string, format: date }
+ *                 plantName: { type: string }
+ *                 billNo:    { type: string }
+ *             lineItems:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/LodhaInvoiceItemInput'
+ *             totals:
+ *               type: object
+ *               properties:
+ *                 totalTaxableValue:       { type: number }
+ *                 totalCgstAmount:         { type: number }
+ *                 totalSgstAmount:         { type: number }
+ *                 totalIgstAmount:         { type: number }
+ *                 totalCessAmount:         { type: number }
+ *                 totalInvoiceValueFigure: { type: number }
+ *                 totalInvoiceValueWords:  { type: string }
+ *             declaration:               { type: string }
+ *             electronicReferenceNumber: { type: string }
+ *             authorisedSignatory:       { type: string }
+ *         project_id: { type: integer }
+ *         user_id:    { type: string }
+ *         user_name:  { type: string }
  *     LodhaInvoice:
  *       allOf:
  *         - $ref: '#/components/schemas/LodhaInvoiceInput'
@@ -233,8 +288,9 @@ router.post("/", async (req, res) => {
       supplier_gstin, invoice_number, invoice_date,
       buyer_name, buyer_address, buyer_state_name, buyer_state_code, buyer_gstin,
       receiver_name, receiver_address, place_of_supply,
-      project_id, work_order_number, plant_name, bill_no,
-      total_taxable_value, total_cgst, total_sgst, total_value, total_invoice_value,
+      project_id, work_order_number, work_order_date, plant_name, bill_no,
+      total_taxable_value, total_cgst, total_sgst, total_igst, total_cess,
+      total_value, total_invoice_value,
       total_invoice_value_words, declaration, electronic_ref_number, electronic_ref_date,
       authorised_signatory, items = [], user_id, user_name
     } = normalizeLodhaInvoicePayload(req.body);
@@ -245,18 +301,20 @@ router.post("/", async (req, res) => {
         supplier_gstin, invoice_number, invoice_date,
         buyer_name, buyer_address, buyer_state_name, buyer_state_code, buyer_gstin,
         receiver_name, receiver_address, place_of_supply,
-        work_order_number, plant_name, bill_no,
-        total_taxable_value, total_cgst, total_sgst, total_value, total_invoice_value,
+        work_order_number, work_order_date, plant_name, bill_no,
+        total_taxable_value, total_cgst, total_sgst, total_igst, total_cess,
+        total_value, total_invoice_value,
         total_invoice_value_words, declaration, electronic_ref_number, electronic_ref_date, authorised_signatory
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
       RETURNING *`,
       [
         project_id, company_name, company_address, company_phone, company_email, company_website,
         supplier_gstin, invoice_number, invoice_date || null,
         buyer_name, buyer_address, buyer_state_name, buyer_state_code, buyer_gstin,
         receiver_name, receiver_address, place_of_supply,
-        work_order_number, plant_name, bill_no,
-        total_taxable_value || 0, total_cgst || 0, total_sgst || 0, total_value || 0, total_invoice_value || 0,
+        work_order_number, work_order_date || null, plant_name, bill_no,
+        total_taxable_value || 0, total_cgst || 0, total_sgst || 0, total_igst || 0, total_cess || 0,
+        total_value || 0, total_invoice_value || 0,
         total_invoice_value_words, declaration, electronic_ref_number, electronic_ref_date || null, authorised_signatory
       ]
     );
@@ -266,16 +324,20 @@ router.post("/", async (req, res) => {
     if (items.length > 0) {
       const itemSql = `
         INSERT INTO lodha_invoice_items (
-          invoice_id, sn, description, sac_code, value_of_supply, discount,
-          taxable_value, cgst_rate, cgst_amount, sgst_rate, sgst_amount, igst_amount, line_total
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          invoice_id, sn, description, sac_code, uom, quantity, rate,
+          value_of_supply, discount, taxable_value, 
+          cgst_rate, cgst_amount, sgst_rate, sgst_amount, 
+          igst_rate, igst_amount, cess_rate, cess_amount, line_total
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
       `;
       for (const item of items) {
         await client.query(itemSql, [
-          invoiceId, item.sn, item.description, item.sac_code,
+          invoiceId, item.sn, item.description, item.sac_code, item.uom, item.quantity, item.rate,
           item.value_of_supply || 0, item.discount || 0, item.taxable_value || 0,
           item.cgst_rate || 0, item.cgst_amount || 0,
-          item.sgst_rate || 0, item.sgst_amount || 0, item.igst_amount || 0,
+          item.sgst_rate || 0, item.sgst_amount || 0,
+          item.igst_rate || 0, item.igst_amount || 0,
+          item.cess_rate || 0, item.cess_amount || 0,
           item.line_total || 0
         ]);
       }
@@ -468,8 +530,9 @@ router.put("/:id", async (req, res) => {
       supplier_gstin, invoice_number, invoice_date,
       buyer_name, buyer_address, buyer_state_name, buyer_state_code, buyer_gstin,
       receiver_name, receiver_address, place_of_supply,
-      project_id, work_order_number, plant_name, bill_no,
-      total_taxable_value, total_cgst, total_sgst, total_value, total_invoice_value,
+      project_id, work_order_number, work_order_date, plant_name, bill_no,
+      total_taxable_value, total_cgst, total_sgst, total_igst, total_cess,
+      total_value, total_invoice_value,
       total_invoice_value_words, declaration, electronic_ref_number, electronic_ref_date,
       authorised_signatory, items = [], user_id, user_name
     } = normalizeLodhaInvoicePayload(req.body);
@@ -480,20 +543,22 @@ router.put("/:id", async (req, res) => {
         supplier_gstin=$7, invoice_number=$8, invoice_date=$9,
         buyer_name=$10, buyer_address=$11, buyer_state_name=$12, buyer_state_code=$13, buyer_gstin=$14,
         receiver_name=$15, receiver_address=$16, place_of_supply=$17,
-        work_order_number=$18, plant_name=$19, bill_no=$20,
-        total_taxable_value=$21, total_cgst=$22, total_sgst=$23, total_value=$24, total_invoice_value=$25,
-        total_invoice_value_words=$26, declaration=$27, electronic_ref_number=$28, electronic_ref_date=$29,
-        authorised_signatory=$30,
+        work_order_number=$18, work_order_date=$19, plant_name=$20, bill_no=$21,
+        total_taxable_value=$22, total_cgst=$23, total_sgst=$24, total_igst=$25, total_cess=$26,
+        total_value=$27, total_invoice_value=$28,
+        total_invoice_value_words=$29, declaration=$30, electronic_ref_number=$31, electronic_ref_date=$32,
+        authorised_signatory=$33,
         updated_at=NOW()
-      WHERE invoice_id = $31
+      WHERE invoice_id = $34
       RETURNING *`,
       [
         project_id, company_name, company_address, company_phone, company_email, company_website,
         supplier_gstin, invoice_number, invoice_date || null,
         buyer_name, buyer_address, buyer_state_name, buyer_state_code, buyer_gstin,
         receiver_name, receiver_address, place_of_supply,
-        work_order_number, plant_name, bill_no,
-        total_taxable_value, total_cgst, total_sgst, total_value, total_invoice_value,
+        work_order_number, work_order_date || null, plant_name, bill_no,
+        total_taxable_value, total_cgst, total_sgst, total_igst, total_cess,
+        total_value, total_invoice_value,
         total_invoice_value_words, declaration, electronic_ref_number, electronic_ref_date || null, authorised_signatory,
         id
       ]
@@ -509,16 +574,20 @@ router.put("/:id", async (req, res) => {
     if (items.length > 0) {
       const itemSql = `
         INSERT INTO lodha_invoice_items (
-          invoice_id, sn, description, sac_code, value_of_supply, discount,
-          taxable_value, cgst_rate, cgst_amount, sgst_rate, sgst_amount, igst_amount, line_total
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          invoice_id, sn, description, sac_code, uom, quantity, rate,
+          value_of_supply, discount, taxable_value, 
+          cgst_rate, cgst_amount, sgst_rate, sgst_amount, 
+          igst_rate, igst_amount, cess_rate, cess_amount, line_total
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
       `;
       for (const item of items) {
         await client.query(itemSql, [
-          id, item.sn, item.description, item.sac_code,
+          id, item.sn, item.description, item.sac_code, item.uom, item.quantity, item.rate,
           item.value_of_supply || 0, item.discount || 0, item.taxable_value || 0,
           item.cgst_rate || 0, item.cgst_amount || 0,
-          item.sgst_rate || 0, item.sgst_amount || 0, item.igst_amount || 0,
+          item.sgst_rate || 0, item.sgst_amount || 0,
+          item.igst_rate || 0, item.igst_amount || 0,
+          item.cess_rate || 0, item.cess_amount || 0,
           item.line_total || 0
         ]);
       }
