@@ -128,35 +128,99 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - sample_id
+ *               - project_id
  *             properties:
- *               project_id:       { type: integer }
- *               building_name:    { type: string }
- *               site_name:        { type: string }
- *               location:         
+ *               sample_id:        { type: integer, example: 101, description: "Unique sample ID provided by the frontend" }
+ *               project_id:       { type: integer, example: 1 }
+ *               building_name:    { type: string,  example: "Block A" }
+ *               site_name:        { type: string,  example: "Main Site" }
+ *               location:
  *                 type: object
  *                 properties:
- *                   floor: { type: string }
- *                   block: { type: string }
- *                   wing: { type: string }
- *                   cooordinates: { type: string }
- *               work_done:        { type: string }
+ *                   floor:        { type: string, example: "2nd" }
+ *                   block:        { type: string, example: "B" }
+ *                   wing:         { type: string, example: "East" }
+ *                   coordinates:  { type: string, example: "19.0760,72.8777" }
+ *               work_done:        { type: string, example: "Flooring" }
  *               item_description:
  *                 type: array
  *                 items:
  *                   type: object
  *                   properties:
- *                     sr_no:         { type: integer }
- *                     description:   { type: string }
- *                     quantity:      { type: number }
- *                     value:         { type: number }
- *                     inventory_id:  { type: integer, description: "Link to inventory item" }
- *                     issued_qty:    { type: number,  description: "Qty to deduct from inventory (default: quantity)" }
+ *                     sr_no:         { type: integer, example: 1 }
+ *                     item_name:     { type: string,  example: "Ceramic Tile", description: "Name of the item" }
+ *                     brand_name:    { type: string,  example: "Kajaria",      description: "Brand of the item" }
+ *                     description:   { type: string,  example: "60x60 Glossy White" }
+ *                     quantity:      { type: number,  example: 100 }
+ *                     value:         { type: number,  example: 45.50 }
+ *                     inventory_id:  { type: integer, example: 12,   description: "Link to inventory item for auto stock-out" }
+ *                     issued_qty:    { type: number,  example: 100,  description: "Qty to deduct from inventory (defaults to quantity)" }
  *               add_fields:       { type: array }
+ *           example:
+ *             sample_id: 101
+ *             project_id: 1
+ *             building_name: "Block A"
+ *             site_name: "Main Site"
+ *             location:
+ *               floor: "2nd"
+ *               block: "B"
+ *               wing: "East"
+ *               coordinates: "19.0760,72.8777"
+ *             work_done: "Flooring"
+ *             item_description:
+ *               - sr_no: 1
+ *                 item_name: "Ceramic Tile"
+ *                 brand_name: "Kajaria"
+ *                 description: "60x60 Glossy White"
+ *                 quantity: 100
+ *                 value: 45.50
+ *                 inventory_id: 12
+ *                 issued_qty: 100
+ *               - sr_no: 2
+ *                 item_name: "Wall Putty"
+ *                 brand_name: "Birla White"
+ *                 description: "Interior Wall Putty 40kg"
+ *                 quantity: 20
+ *                 value: 380.00
+ *             add_fields: []
  *     responses:
  *       201:
- *         description: Sample created; linked inventory items deducted
+ *         description: Sample created successfully; linked inventory items auto-deducted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:               { type: integer, example: 1, description: "Auto-generated table row ID" }
+ *                 sample_id:        { type: integer, example: 101, description: "Frontend-supplied unique sample ID" }
+ *                 project_id:       { type: integer, example: 1 }
+ *                 building_name:    { type: string,  example: "Block A" }
+ *                 site_name:        { type: string,  example: "Main Site" }
+ *                 location:         { type: object }
+ *                 work_done:        { type: string,  example: "Flooring" }
+ *                 item_description:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       sr_no:              { type: integer }
+ *                       item_name:          { type: string }
+ *                       brand_name:         { type: string }
+ *                       description:        { type: string }
+ *                       quantity:           { type: number }
+ *                       value:              { type: number }
+ *                       inventory_id:       { type: integer }
+ *                       issued_qty:         { type: number }
+ *                       inventory_issued:   { type: boolean }
+ *                       inventory_issued_at: { type: string, format: date-time }
+ *                 add_fields:       { type: array }
+ *                 sample_file:      { type: string }
+ *                 created_at:       { type: string, format: date-time }
+ *                 updated_at:       { type: string, format: date-time }
  *       400:
- *         description: Insufficient stock or bad data
+ *         description: Insufficient stock, invalid project_id, or bad data
  *       500:
  *         description: Server error
  */
@@ -166,17 +230,24 @@ router.post("/create-sample", async (req, res) => {
     await client.query("BEGIN");
 
     const {
+      sample_id: frontend_sample_id,
       project_id, building_name, site_name,
       location, work_done, item_description, add_fields,
     } = req.body;
 
-    // Insert sample first so we have sample_id for movement source_ref
+    if (!frontend_sample_id) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "sample_id is required and must be provided by the client" });
+    }
+
+    // Insert sample using the sample_id supplied by the frontend
     const result = await client.query(
       `INSERT INTO samples
-         (project_id, building_name, site_name, location, work_done, item_description, add_fields)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
+         (sample_id, project_id, building_name, site_name, location, work_done, item_description, add_fields)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
        RETURNING *`,
       [
+        frontend_sample_id,
         project_id, building_name, site_name,
         location ? JSON.stringify(location) : null,
         work_done,

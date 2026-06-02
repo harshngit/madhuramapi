@@ -126,7 +126,8 @@ CREATE INDEX IF NOT EXISTS idx_itrs_project_id ON itrs(project_id);
 CREATE INDEX IF NOT EXISTS idx_itrs_itr_ref_no_lower ON itrs(LOWER(itr_ref_no));
 
 CREATE TABLE IF NOT EXISTS samples (
-    sample_id SERIAL PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
+    sample_id INTEGER UNIQUE NOT NULL,
     project_id INTEGER REFERENCES projects(project_id) ON DELETE CASCADE,
     building_name TEXT,
     site_name TEXT,
