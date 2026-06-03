@@ -530,7 +530,7 @@ router.post("/match/po/:poId", async (req, res) => {
  *       - in: path
  *         name: sampleId
  *         required: true
- *         schema: { type: integer }
+ *         schema: { type: string }
  *     requestBody:
  *       content:
  *         application/json:
@@ -626,7 +626,7 @@ router.post("/match/sample/:sampleId", async (req, res) => {
     }
 
     res.json({
-      sample_id: Number(sampleId),
+      sample_id: sampleId,
       total: results.length,
       matched: results.filter(r => r.status === "matched").length,
       unmatched: results.filter(r => r.status === "unmatched").length,

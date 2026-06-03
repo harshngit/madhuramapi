@@ -172,7 +172,7 @@ async function resolveSourceName(sourceType, sourceId) {
  *               source_dc_id: { type: integer }
  *               source_po_id: { type: integer }
  *               source_pr_id: { type: integer }
- *               source_sample_id: { type: integer }
+ *               source_sample_id: { type: string }
  *               notes:        { type: string }
  *               user_id:      { type: string }
  *               user_name:    { type: string }
@@ -796,7 +796,7 @@ router.get("/:id/history", async (req, res) => {
  *               movement_type: { type: string, enum: [in, out, adjustment] }
  *               quantity:      { type: number }
  *               source_type:   { type: string, enum: [dc, po, pr, sample, mir, manual] }
- *               source_id:     { type: integer }
+ *               source_id:     { type: string }
  *               source_ref:    { type: string }
  *               project_id:    { type: integer }
  *               project_name:  { type: string }

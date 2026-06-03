@@ -102,7 +102,7 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *               project_id:
  *                 type: integer
  *               sample_id:
- *                 type: integer
+ *                 type: string
  *               company_name:
  *                 type: string
  *               company_subtitle:
@@ -340,7 +340,7 @@ router.get("/project/:projectId", async (req, res) => {
  *         name: sampleId
  *         required: true
  *         schema:
- *           type: integer
+ *           type: string
  *         description: Sample ID
  *     responses:
  *       200:

@@ -200,7 +200,7 @@ router.post("/upload-signature", uploadSignature.single("file"), (req, res) => {
  *             properties:
  *               project_id:    { type: integer }
  *               project_name:  { type: string }
- *               sample_id:     { type: integer }
+ *               sample_id:     { type: string }
  *               workorder_no:  { type: string }
  *               location:      { type: string }
  *               mirno:         { type: string }
@@ -345,7 +345,7 @@ router.get("/project/:projectId", async (req, res) => {
  *       - in: path
  *         name: sampleId
  *         required: true
- *         schema: { type: integer }
+ *         schema: { type: string }
  *     responses:
  *       200:
  *         description: List of PRs for the sample

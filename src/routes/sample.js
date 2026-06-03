@@ -132,7 +132,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *               - sample_id
  *               - project_id
  *             properties:
- *               sample_id:        { type: integer, example: 101, description: "Unique sample ID provided by the frontend" }
+ *               sample_id:        { type: string, example: "SAMPLE-001", description: "Unique sample ID provided by the frontend (can be alphanumeric)" }
  *               project_id:       { type: integer, example: 1 }
  *               building_name:    { type: string,  example: "Block A" }
  *               site_name:        { type: string,  example: "Main Site" }
@@ -153,13 +153,14 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                     item_name:     { type: string,  example: "Ceramic Tile", description: "Name of the item" }
  *                     brand_name:    { type: string,  example: "Kajaria",      description: "Brand of the item" }
  *                     description:   { type: string,  example: "60x60 Glossy White" }
+ *                     unit:          { type: string,  example: "Nos", description: "Unit of measurement (e.g., Nos, Kg, Mtr)" }
  *                     quantity:      { type: number,  example: 100 }
  *                     value:         { type: number,  example: 45.50 }
  *                     inventory_id:  { type: integer, example: 12,   description: "Link to inventory item for auto stock-out" }
  *                     issued_qty:    { type: number,  example: 100,  description: "Qty to deduct from inventory (defaults to quantity)" }
  *               add_fields:       { type: array }
  *           example:
- *             sample_id: 101
+ *             sample_id: "SAMPLE-001"
  *             project_id: 1
  *             building_name: "Block A"
  *             site_name: "Main Site"
@@ -174,6 +175,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                 item_name: "Ceramic Tile"
  *                 brand_name: "Kajaria"
  *                 description: "60x60 Glossy White"
+ *                 unit: "Nos"
  *                 quantity: 100
  *                 value: 45.50
  *                 inventory_id: 12
@@ -182,6 +184,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                 item_name: "Wall Putty"
  *                 brand_name: "Birla White"
  *                 description: "Interior Wall Putty 40kg"
+ *                 unit: "Bags"
  *                 quantity: 20
  *                 value: 380.00
  *             add_fields: []
@@ -194,12 +197,12 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *               type: object
  *               properties:
  *                 id:               { type: integer, example: 1, description: "Auto-generated table row ID" }
- *                 sample_id:        { type: integer, example: 101, description: "Frontend-supplied unique sample ID" }
+ *                 sample_id:        { type: string, example: "SAMPLE-001", description: "Frontend-supplied unique sample ID (alphanumeric)" }
  *                 project_id:       { type: integer, example: 1 }
  *                 building_name:    { type: string,  example: "Block A" }
  *                 site_name:        { type: string,  example: "Main Site" }
  *                 location:         { type: object }
- *                 work_done:        { type: string,  example: "Flooring" }
+ *                 work_done:        { type: string, example: "Flooring" }
  *                 item_description:
  *                   type: array
  *                   items:
@@ -209,6 +212,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                       item_name:          { type: string }
  *                       brand_name:         { type: string }
  *                       description:        { type: string }
+ *                       unit:               { type: string }
  *                       quantity:           { type: number }
  *                       value:              { type: number }
  *                       inventory_id:       { type: integer }
@@ -385,7 +389,7 @@ router.get("/project/:projectId", async (req, res) => {
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: integer }
+ *         schema: { type: string }
  *     responses:
  *       200:
  *         description: Sample details
@@ -421,7 +425,7 @@ router.get("/:id", async (req, res) => {
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: integer }
+ *         schema: { type: string }
  *     responses:
  *       200:
  *         description: Sample updated
@@ -457,7 +461,7 @@ router.put("/:id", async (req, res) => {
       await processInventoryItems(client, {
         items:           newItems,
         previous_items:  prevItems,
-        sample_id:       Number(id),
+        sample_id:       id,
         sample_ref:      building_name || prev.building_name || `Sample #${id}`,
         project_id:      prev.project_id,
         project_name:    req.body.project_name || null,
@@ -552,7 +556,7 @@ router.delete("/:id", async (req, res) => {
         movement_type:     "in",              // stock back IN
         quantity:          qty,
         source_type:       "sample",
-        source_id:         Number(req.params.id),
+        source_id:         sample.sample_id,
         source_ref:        sample.building_name || `Sample #${req.params.id}`,
         project_id:        sample.project_id,
         project_name:      req.body.project_name || null,
