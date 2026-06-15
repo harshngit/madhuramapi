@@ -612,6 +612,371 @@ router.get("/user/:user_id", async (req, res) => {
 
 /**
  * @swagger
+ * /api/attendance/blocked-users:
+ *   get:
+ *     summary: Get list of blocked users
+ *     tags: [Attendance]
+ *     responses:
+ *       200:
+ *         description: List of blocked users with absent count and block history
+ */
+router.get("/blocked-users", async (req, res) => {
+  try {
+    // Get users with is_blocked = true OR users with >=15 absents
+    const blockedUsersResult = await pool.query(`
+      SELECT 
+        u.user_id,
+        u.name,
+        u.phone_number,
+        u.email,
+        u.role,
+        u.is_blocked,
+        (SELECT COUNT(*) FROM attendance a WHERE a.user_id = u.user_id AND a.status = 'absent') AS absent_count,
+        COALESCE(
+          (
+            SELECT json_agg(json_build_object(
+              'history_id', h.history_id,
+              'action', h.action,
+              'reason', h.reason,
+              'performed_by', h.performed_by,
+              'performed_by_name', h.performed_by_name,
+              'created_at', h.created_at
+            ) ORDER BY h.created_at DESC)
+            FROM user_block_history h
+            WHERE h.user_id = u.user_id
+          ),
+          '[]'::json
+        ) AS block_history
+      FROM auth_users u
+      WHERE u.is_blocked = true OR (
+        SELECT COUNT(*) FROM attendance a WHERE a.user_id = u.user_id AND a.status = 'absent'
+      ) >= 15
+      ORDER BY u.name ASC
+    `);
+
+    res.json(blockedUsersResult.rows);
+  } catch (error) {
+    console.error("Get blocked users error:", error);
+    res.status(500).json({ error: "Failed to fetch blocked users" });
+  }
+});
+
+/**
+ * @swagger
+ * /api/attendance/block/{user_id}:
+ *   patch:
+ *     summary: Block a user
+ *     tags: [Attendance]
+ *     parameters:
+ *       - in: path
+ *         name: user_id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason: { type: string }
+ *               performed_by: { type: string, format: uuid }
+ *               performed_by_name: { type: string }
+ *     responses:
+ *       200:
+ *         description: User blocked successfully
+ *       404:
+ *         description: User not found
+ */
+router.patch("/block/:user_id", async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { user_id } = req.params;
+    const { reason, performed_by, performed_by_name } = req.body;
+
+    // Check if user exists
+    const userResult = await client.query(
+      "SELECT * FROM auth_users WHERE user_id = $1",
+      [user_id]
+    );
+
+    if (userResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Update is_blocked to true
+    await client.query(
+      "UPDATE auth_users SET is_blocked = true, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1",
+      [user_id]
+    );
+
+    // Insert into block history
+    await client.query(
+      `INSERT INTO user_block_history (user_id, action, reason, performed_by, performed_by_name)
+       VALUES ($1, 'block', $2, $3, $4)`,
+      [user_id, reason, performed_by, performed_by_name]
+    );
+
+    await client.query('COMMIT');
+
+    // Get updated user data
+    const updatedUserResult = await pool.query(`
+      SELECT 
+        u.user_id,
+        u.name,
+        u.phone_number,
+        u.email,
+        u.role,
+        u.is_blocked,
+        (SELECT COUNT(*) FROM attendance a WHERE a.user_id = u.user_id AND a.status = 'absent') AS absent_count
+      FROM auth_users u
+      WHERE u.user_id = $1
+    `, [user_id]);
+
+    res.json({
+      message: "User blocked successfully",
+      user: updatedUserResult.rows[0]
+    });
+
+    logActivity({
+      action: "blocked_user",
+      entity_type: "user",
+      entity_id: user_id,
+      entity_name: userResult.rows[0].name || userResult.rows[0].username,
+      performed_by: performed_by || null,
+      performed_by_name: performed_by_name || null,
+      meta: { reason }
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error("Block user error:", error);
+    res.status(500).json({ error: "Failed to block user" });
+  } finally {
+    client.release();
+  }
+});
+
+/**
+ * @swagger
+ * /api/attendance/unblock/{user_id}:
+ *   patch:
+ *     summary: Unblock a user
+ *     tags: [Attendance]
+ *     parameters:
+ *       - in: path
+ *         name: user_id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason: { type: string }
+ *               performed_by: { type: string, format: uuid }
+ *               performed_by_name: { type: string }
+ *     responses:
+ *       200:
+ *         description: User unblocked successfully
+ *       404:
+ *         description: User not found
+ */
+router.patch("/unblock/:user_id", async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { user_id } = req.params;
+    const { reason, performed_by, performed_by_name } = req.body;
+
+    // Check if user exists
+    const userResult = await client.query(
+      "SELECT * FROM auth_users WHERE user_id = $1",
+      [user_id]
+    );
+
+    if (userResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Update is_blocked to false
+    await client.query(
+      "UPDATE auth_users SET is_blocked = false, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1",
+      [user_id]
+    );
+
+    // Insert into block history
+    await client.query(
+      `INSERT INTO user_block_history (user_id, action, reason, performed_by, performed_by_name)
+       VALUES ($1, 'unblock', $2, $3, $4)`,
+      [user_id, reason, performed_by, performed_by_name]
+    );
+
+    await client.query('COMMIT');
+
+    // Get updated user data
+    const updatedUserResult = await pool.query(`
+      SELECT 
+        u.user_id,
+        u.name,
+        u.phone_number,
+        u.email,
+        u.role,
+        u.is_blocked,
+        (SELECT COUNT(*) FROM attendance a WHERE a.user_id = u.user_id AND a.status = 'absent') AS absent_count
+      FROM auth_users u
+      WHERE u.user_id = $1
+    `, [user_id]);
+
+    res.json({
+      message: "User unblocked successfully",
+      user: updatedUserResult.rows[0]
+    });
+
+    logActivity({
+      action: "unblocked_user",
+      entity_type: "user",
+      entity_id: user_id,
+      entity_name: userResult.rows[0].name || userResult.rows[0].username,
+      performed_by: performed_by || null,
+      performed_by_name: performed_by_name || null,
+      meta: { reason }
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error("Unblock user error:", error);
+    res.status(500).json({ error: "Failed to unblock user" });
+  } finally {
+    client.release();
+  }
+});
+
+/**
+ * @swagger
+ * /api/attendance/user/{user_id}/block-history:
+ *   get:
+ *     summary: Get block history for a specific user
+ *     tags: [Attendance]
+ *     parameters:
+ *       - in: path
+ *         name: user_id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Block history for the user
+ */
+router.get("/user/:user_id/block-history", async (req, res) => {
+  try {
+    const { user_id } = req.params;
+    const result = await pool.query(
+      "SELECT * FROM user_block_history WHERE user_id = $1 ORDER BY created_at DESC",
+      [user_id]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Get block history error:", error);
+    res.status(500).json({ error: "Failed to fetch block history" });
+  }
+});
+
+/**
+ * @swagger
+ * /api/attendance/checkout/{id}:
+ *   put:
+ *     summary: Check out an attendance record
+ *     tags: [Attendance]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               photo_selfie: { type: string }
+ *               photo_site: { type: string }
+ *               location: { type: string }
+ *               latitude: { type: number }
+ *               longitude: { type: number }
+ *               user_id: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Checked out successfully
+ */
+router.put("/checkout/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { photo_selfie, photo_site, location, latitude, longitude, user_id } = req.body;
+
+    const userResult = await pool.query(
+      "SELECT check_out_time, role FROM auth_users WHERE user_id = $1",
+      [user_id]
+    );
+
+    const attendanceResult = await pool.query(
+      "SELECT remark FROM attendance WHERE attendance_id = $1",
+      [id]
+    );
+
+    if (attendanceResult.rows.length === 0) {
+      return res.status(404).json({ error: "Attendance record not found" });
+    }
+
+    let remark = attendanceResult.rows[0].remark || "";
+    if (userResult.rows.length > 0 && userResult.rows[0].role === 'labour' && userResult.rows[0].check_out_time) {
+      const designatedCheckOut = userResult.rows[0].check_out_time;
+      const now = new Date();
+      const [desigH, desigM, desigS] = designatedCheckOut.split(':').map(Number);
+      const designatedDate = new Date(now);
+      designatedDate.setHours(desigH, desigM, desigS || 0, 0);
+      if (now < designatedDate) {
+        const diffMins = Math.floor((designatedDate - now) / 60000);
+        if (diffMins > 0) {
+          const earlyRemark = `User checked out early by ${diffMins} minutes`;
+          remark = remark ? `${remark}. ${earlyRemark}` : earlyRemark;
+        }
+      }
+    }
+
+    const result = await pool.query(
+      `UPDATE attendance SET
+        check_out_time = CURRENT_TIMESTAMP,
+        check_out_photo_selfie = $1, check_out_photo_site = $2, check_out_location = $3,
+        check_out_latitude = $4, check_out_longitude = $5,
+        remark = $6, updated_at = CURRENT_TIMESTAMP
+      WHERE attendance_id = $7 RETURNING *`,
+      [photo_selfie, photo_site, location, latitude, longitude, remark, id]
+    );
+
+    res.json(result.rows[0]);
+
+    logActivity({
+      action: "checked_out",
+      entity_type: "attendance",
+      entity_id: id,
+      entity_name: `Check-out for attendance ${id}`,
+      performed_by: user_id || null,
+      meta: { remark }
+    });
+  } catch (error) {
+    console.error("Checkout error:", error);
+    res.status(500).json({ error: "Failed to check out" });
+  }
+});
+
+/**
+ * @swagger
  * /api/attendance/{id}:
  *   get:
  *     summary: Get an attendance record by ID
@@ -831,368 +1196,6 @@ router.delete("/:id", async (req, res) => {
   } catch (error) {
     console.error("Delete attendance error:", error);
     res.status(500).json({ error: "Failed to delete attendance record" });
-  }
-});
-
-/**
- * @swagger
- * /api/attendance/checkout/{id}:
- *   put:
- *     summary: Check out an attendance record
- *     tags: [Attendance]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: integer }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               photo_selfie: { type: string }
- *               photo_site: { type: string }
- *               location: { type: string }
- *               latitude: { type: number }
- *               longitude: { type: number }
- *               user_id: { type: string, format: uuid }
- *     responses:
- *       200:
- *         description: Checked out successfully
- */
-router.put("/checkout/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { photo_selfie, photo_site, location, latitude, longitude, user_id } = req.body;
-
-    const userResult = await pool.query(
-      "SELECT check_out_time, role FROM auth_users WHERE user_id = $1",
-      [user_id]
-    );
-
-    const attendanceResult = await pool.query(
-      "SELECT remark FROM attendance WHERE attendance_id = $1",
-      [id]
-    );
-
-    if (attendanceResult.rows.length === 0) {
-      return res.status(404).json({ error: "Attendance record not found" });
-    }
-
-    let remark = attendanceResult.rows[0].remark || "";
-    if (userResult.rows.length > 0 && userResult.rows[0].role === 'labour' && userResult.rows[0].check_out_time) {
-      const designatedCheckOut = userResult.rows[0].check_out_time;
-      const now = new Date();
-      const [desigH, desigM, desigS] = designatedCheckOut.split(':').map(Number);
-      const designatedDate = new Date(now);
-      designatedDate.setHours(desigH, desigM, desigS || 0, 0);
-      if (now < designatedDate) {
-        const diffMins = Math.floor((designatedDate - now) / 60000);
-        if (diffMins > 0) {
-          const earlyRemark = `User checked out early by ${diffMins} minutes`;
-          remark = remark ? `${remark}. ${earlyRemark}` : earlyRemark;
-        }
-      }
-    }
-
-    const result = await pool.query(
-      `UPDATE attendance SET
-        check_out_time = CURRENT_TIMESTAMP,
-        check_out_photo_selfie = $1, check_out_photo_site = $2, check_out_location = $3,
-        check_out_latitude = $4, check_out_longitude = $5,
-        remark = $6, updated_at = CURRENT_TIMESTAMP
-      WHERE attendance_id = $7 RETURNING *`,
-      [photo_selfie, photo_site, location, latitude, longitude, remark, id]
-    );
-
-    res.json(result.rows[0]);
-
-    logActivity({
-      action: "checked_out",
-      entity_type: "attendance",
-      entity_id: id,
-      entity_name: `Check-out for attendance ${id}`,
-      performed_by: user_id || null,
-      meta: { remark }
-    });
-  } catch (error) {
-    console.error("Checkout error:", error);
-    res.status(500).json({ error: "Failed to check out" });
-  }
-});
-
-/**
- * @swagger
- * /api/attendance/blocked-users:
- *   get:
- *     summary: Get list of blocked users
- *     tags: [Attendance]
- *     responses:
- *       200:
- *         description: List of blocked users with absent count and block history
- */
-router.get("/blocked-users", async (req, res) => {
-  try {
-    // Get users with is_blocked = true OR users with >=15 absents
-    const blockedUsersResult = await pool.query(`
-      SELECT 
-        u.user_id,
-        u.name,
-        u.phone_number,
-        u.email,
-        u.role,
-        u.is_blocked,
-        (SELECT COUNT(*) FROM attendance a WHERE a.user_id = u.user_id AND a.status = 'absent') AS absent_count,
-        (
-          SELECT json_agg(json_build_object(
-            'history_id', h.history_id,
-            'action', h.action,
-            'reason', h.reason,
-            'performed_by', h.performed_by,
-            'performed_by_name', h.performed_by_name,
-            'created_at', h.created_at
-          ) ORDER BY h.created_at DESC)
-          FROM user_block_history h
-          WHERE h.user_id = u.user_id
-        ) AS block_history
-      FROM auth_users u
-      WHERE u.is_blocked = true OR (
-        SELECT COUNT(*) FROM attendance a WHERE a.user_id = u.user_id AND a.status = 'absent'
-      ) >= 15
-      ORDER BY u.name ASC
-    `);
-
-    res.json(blockedUsersResult.rows);
-  } catch (error) {
-    console.error("Get blocked users error:", error);
-    res.status(500).json({ error: "Failed to fetch blocked users" });
-  }
-});
-
-/**
- * @swagger
- * /api/attendance/unblock/{user_id}:
- *   patch:
- *     summary: Unblock a user
- *     tags: [Attendance]
- *     parameters:
- *       - in: path
- *         name: user_id
- *         required: true
- *         schema: { type: string, format: uuid }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               reason: { type: string }
- *               performed_by: { type: string, format: uuid }
- *               performed_by_name: { type: string }
- *     responses:
- *       200:
- *         description: User unblocked successfully
- *       404:
- *         description: User not found
- */
-router.patch("/unblock/:user_id", async (req, res) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    const { user_id } = req.params;
-    const { reason, performed_by, performed_by_name } = req.body;
-
-    // Check if user exists
-    const userResult = await client.query(
-      "SELECT * FROM auth_users WHERE user_id = $1",
-      [user_id]
-    );
-
-    if (userResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    // Update is_blocked to false
-    await client.query(
-      "UPDATE auth_users SET is_blocked = false, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1",
-      [user_id]
-    );
-
-    // Insert into block history
-    await client.query(
-      `INSERT INTO user_block_history (user_id, action, reason, performed_by, performed_by_name)
-       VALUES ($1, 'unblock', $2, $3, $4)`,
-      [user_id, reason, performed_by, performed_by_name]
-    );
-
-    await client.query('COMMIT');
-
-    // Get updated user data
-    const updatedUserResult = await pool.query(`
-      SELECT 
-        u.user_id,
-        u.name,
-        u.phone_number,
-        u.email,
-        u.role,
-        u.is_blocked,
-        (SELECT COUNT(*) FROM attendance a WHERE a.user_id = u.user_id AND a.status = 'absent') AS absent_count
-      FROM auth_users u
-      WHERE u.user_id = $1
-    `, [user_id]);
-
-    res.json({
-      message: "User unblocked successfully",
-      user: updatedUserResult.rows[0]
-    });
-
-    logActivity({
-      action: "unblocked_user",
-      entity_type: "user",
-      entity_id: user_id,
-      entity_name: userResult.rows[0].name || userResult.rows[0].username,
-      performed_by: performed_by || null,
-      performed_by_name: performed_by_name || null,
-      meta: { reason }
-    });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error("Unblock user error:", error);
-    res.status(500).json({ error: "Failed to unblock user" });
-  } finally {
-    client.release();
-  }
-});
-
-/**
- * @swagger
- * /api/attendance/block/{user_id}:
- *   patch:
- *     summary: Block a user
- *     tags: [Attendance]
- *     parameters:
- *       - in: path
- *         name: user_id
- *         required: true
- *         schema: { type: string, format: uuid }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               reason: { type: string }
- *               performed_by: { type: string, format: uuid }
- *               performed_by_name: { type: string }
- *     responses:
- *       200:
- *         description: User blocked successfully
- *       404:
- *         description: User not found
- */
-router.patch("/block/:user_id", async (req, res) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    const { user_id } = req.params;
-    const { reason, performed_by, performed_by_name } = req.body;
-
-    // Check if user exists
-    const userResult = await client.query(
-      "SELECT * FROM auth_users WHERE user_id = $1",
-      [user_id]
-    );
-
-    if (userResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    // Update is_blocked to true
-    await client.query(
-      "UPDATE auth_users SET is_blocked = true, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1",
-      [user_id]
-    );
-
-    // Insert into block history
-    await client.query(
-      `INSERT INTO user_block_history (user_id, action, reason, performed_by, performed_by_name)
-       VALUES ($1, 'block', $2, $3, $4)`,
-      [user_id, reason, performed_by, performed_by_name]
-    );
-
-    await client.query('COMMIT');
-
-    // Get updated user data
-    const updatedUserResult = await pool.query(`
-      SELECT 
-        u.user_id,
-        u.name,
-        u.phone_number,
-        u.email,
-        u.role,
-        u.is_blocked,
-        (SELECT COUNT(*) FROM attendance a WHERE a.user_id = u.user_id AND a.status = 'absent') AS absent_count
-      FROM auth_users u
-      WHERE u.user_id = $1
-    `, [user_id]);
-
-    res.json({
-      message: "User blocked successfully",
-      user: updatedUserResult.rows[0]
-    });
-
-    logActivity({
-      action: "blocked_user",
-      entity_type: "user",
-      entity_id: user_id,
-      entity_name: userResult.rows[0].name || userResult.rows[0].username,
-      performed_by: performed_by || null,
-      performed_by_name: performed_by_name || null,
-      meta: { reason }
-    });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error("Block user error:", error);
-    res.status(500).json({ error: "Failed to block user" });
-  } finally {
-    client.release();
-  }
-});
-
-/**
- * @swagger
- * /api/attendance/user/{user_id}/block-history:
- *   get:
- *     summary: Get block history for a specific user
- *     tags: [Attendance]
- *     parameters:
- *       - in: path
- *         name: user_id
- *         required: true
- *         schema: { type: string, format: uuid }
- *     responses:
- *       200:
- *         description: Block history for the user
- */
-router.get("/user/:user_id/block-history", async (req, res) => {
-  try {
-    const { user_id } = req.params;
-    const result = await pool.query(
-      "SELECT * FROM user_block_history WHERE user_id = $1 ORDER BY created_at DESC",
-      [user_id]
-    );
-    res.json(result.rows);
-  } catch (error) {
-    console.error("Get block history error:", error);
-    res.status(500).json({ error: "Failed to fetch block history" });
   }
 });
 

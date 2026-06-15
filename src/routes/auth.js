@@ -36,6 +36,9 @@ const { logActivity } = require("./dashboard"); // adjust path if needed
  *           items:
  *             type: string
  *           description: List of projects assigned to the user
+ *         is_blocked:
+ *           type: boolean
+ *           description: Whether the user is blocked
  *     AuthResponse:
  *       type: object
  *       properties:
@@ -135,6 +138,7 @@ function sanitizeUser(row) {
     project_list: row.project_list || [],
     check_in_time: row.check_in_time,
     check_out_time: row.check_out_time,
+    is_blocked: row.is_blocked || false,
   };
 }
 
@@ -227,7 +231,7 @@ router.post("/signup", async (req, res) => {
     const insert = await pool.query(
       `INSERT INTO auth_users (name, email, phone_number, password_hash, role, project_list, check_in_time, check_out_time)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING user_id, name, email, phone_number, role, project_list, check_in_time, check_out_time`,
+       RETURNING user_id, name, email, phone_number, role, project_list, check_in_time, check_out_time, is_blocked`,
       [
         String(usernameValue).trim(),
         normalizedEmail,
@@ -309,7 +313,7 @@ router.post("/login", async (req, res) => {
     const normalizedEmail = normalizeEmail(email);
 
     const result = await pool.query(
-      `SELECT user_id, name, email, phone_number, password_hash, role, project_list
+      `SELECT user_id, name, email, phone_number, password_hash, role, project_list, is_blocked
        FROM auth_users
        WHERE email = $1`,
       [normalizedEmail]
@@ -455,14 +459,14 @@ router.get("/users", async (req, res) => {
 
     const result = projectIdValue
       ? await pool.query(
-          `SELECT user_id, name, email, phone_number, role, project_list
+          `SELECT user_id, name, email, phone_number, role, project_list, is_blocked
            FROM auth_users
            WHERE $1 = ANY(project_list)
            ORDER BY name ASC`,
           [projectIdValue]
         )
       : await pool.query(
-          "SELECT user_id, name, email, phone_number, role, project_list FROM auth_users ORDER BY name ASC"
+          "SELECT user_id, name, email, phone_number, role, project_list, is_blocked FROM auth_users ORDER BY name ASC"
         );
     return res.json(result.rows);
   } catch (error) {
@@ -500,7 +504,7 @@ router.get("/users/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const result = await pool.query(
-      "SELECT user_id, name, email, phone_number, role, project_list FROM auth_users WHERE user_id = $1",
+      "SELECT user_id, name, email, phone_number, role, project_list, is_blocked FROM auth_users WHERE user_id = $1",
       [id]
     );
 
@@ -536,7 +540,7 @@ router.get("/users/:id", async (req, res) => {
 router.get("/labours", async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT user_id, name, email, phone_number, role, project_list FROM auth_users WHERE role = 'labour' ORDER BY name ASC"
+      "SELECT user_id, name, email, phone_number, role, project_list, is_blocked FROM auth_users WHERE role = 'labour' ORDER BY name ASC"
     );
     return res.json(result.rows);
   } catch (error) {
@@ -613,7 +617,7 @@ router.put("/users/:id", async (req, res) => {
        SET name = $1, email = $2, phone_number = $3, role = $4, project_list = $5, 
            check_in_time = $6, check_out_time = $7 
        WHERE user_id = $8 
-       RETURNING user_id, name, email, phone_number, role, project_list, check_in_time, check_out_time`,
+       RETURNING user_id, name, email, phone_number, role, project_list, check_in_time, check_out_time, is_blocked`,
       [username, email, phone_number, role, projects, check_in_time || null, check_out_time || null, id]
     );
 
