@@ -60,7 +60,7 @@ const upload = multer({ storage: storage });
  *           format: uuid
  *         status:
  *           type: string
- *           enum: [pending, present, absent]
+ *           enum: [pending, present, absent, half_day]
  *         check_out_time:
  *           type: string
  *           format: date-time
@@ -1010,7 +1010,7 @@ router.get("/:id", async (req, res) => {
  * @swagger
  * /api/attendance/{id}/status:
  *   patch:
- *     summary: Update attendance status (present/absent) — blocked at 15 absences per user
+ *     summary: Update attendance status (present/absent/half_day) — blocked at 15 absences per user
  *     tags: [Attendance]
  *     parameters:
  *       - in: path
@@ -1025,7 +1025,7 @@ router.get("/:id", async (req, res) => {
  *             type: object
  *             required: [status]
  *             properties:
- *               status: { type: string, enum: [present, absent] }
+ *               status: { type: string, enum: [present, absent, half_day] }
  *     responses:
  *       200:
  *         description: Status updated
@@ -1041,8 +1041,8 @@ router.patch("/:id/status", async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    if (!['present', 'absent'].includes(status)) {
-      return res.status(400).json({ error: "Status must be 'present' or 'absent'" });
+    if (!['present', 'absent', 'half_day'].includes(status)) {
+      return res.status(400).json({ error: "Status must be 'present', 'absent', or 'half_day'" });
     }
 
     // ─── Block marking absent when user is already at/above the 15 limit ─────
