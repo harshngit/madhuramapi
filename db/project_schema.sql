@@ -145,6 +145,7 @@ CREATE TABLE IF NOT EXISTS purchase_requisitions (
     project_id INTEGER REFERENCES projects(project_id) ON DELETE CASCADE,
     sample_id INTEGER REFERENCES samples(sample_id) ON DELETE SET NULL,
     project_name TEXT,
+    pr_number TEXT,
     workorder_no TEXT,
     location TEXT,
     mirno TEXT,

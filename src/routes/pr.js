@@ -201,6 +201,7 @@ router.post("/upload-signature", uploadSignature.single("file"), (req, res) => {
  *               project_id:    { type: integer }
  *               project_name:  { type: string }
  *               sample_id:     { type: string }
+ *               pr_number:     { type: string }
  *               workorder_no:  { type: string }
  *               location:      { type: string }
  *               mirno:         { type: string }
@@ -226,7 +227,7 @@ router.post("/upload-signature", uploadSignature.single("file"), (req, res) => {
  */
 router.post("/", async (req, res) => {
   const {
-    project_id, sample_id, project_name,
+    project_id, sample_id, project_name, pr_number,
     workorder_no, location, mirno, urgency, date,
     items, approved_by, pr_file_path, signature_file_path,
   } = req.body;
@@ -242,12 +243,12 @@ router.post("/", async (req, res) => {
 
     const headerRes = await client.query(
       `INSERT INTO purchase_requisitions
-         (project_id, sample_id, project_name, workorder_no, location,
+         (project_id, sample_id, project_name, pr_number, workorder_no, location,
           mirno, urgency, date, approved_by, pr_file_path, signature_file_path)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING *`,
       [
-        project_id, sample_id || null, project_name,
+        project_id, sample_id || null, project_name, pr_number || null,
         workorder_no || null, location || null, mirno || null,
         urgency || null, date || null, approved_by || null,
         pr_file_path || null, signature_file_path || null,
@@ -447,7 +448,7 @@ router.get("/", async (req, res) => {
 router.put("/:id", async (req, res) => {
   const { id } = req.params;
   const {
-    project_name, workorder_no, location, mirno, urgency,
+    project_name, pr_number, workorder_no, location, mirno, urgency,
     date, items, approved_by, pr_file_path, signature_file_path, sample_id,
   } = req.body;
 
@@ -460,6 +461,7 @@ router.put("/:id", async (req, res) => {
     const vals = [];
     let c = 1;
     if (project_name !== undefined)        { fields.push(`project_name=$${c++}`);        vals.push(project_name); }
+    if (pr_number !== undefined)           { fields.push(`pr_number=$${c++}`);           vals.push(pr_number); }
     if (workorder_no !== undefined)        { fields.push(`workorder_no=$${c++}`);        vals.push(workorder_no); }
     if (location !== undefined)            { fields.push(`location=$${c++}`);            vals.push(location); }
     if (mirno !== undefined)               { fields.push(`mirno=$${c++}`);               vals.push(mirno); }
