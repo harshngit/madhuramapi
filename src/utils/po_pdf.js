@@ -121,6 +121,13 @@ function generatePOPdf(po) {
         .text("Site :", col1, y);
       doc.fontSize(9).fillColor(PRIMARY).font("Helvetica-Bold")
         .text(po.site || "-", col1 + 30, y);
+      y += 14;
+      if (po.site_address) {
+        doc.fontSize(8).fillColor("#666666").font("Helvetica")
+          .text("Site Address :", col1, y);
+        doc.fontSize(8).fillColor("#333333").font("Helvetica")
+          .text(po.site_address, col1 + 80, y, { width: contentWidth / 2 - 85 });
+      }
 
       if (po.primary_contact_name || po.primary_contact_number) {
         doc.fontSize(8).fillColor("#555555").font("Helvetica")

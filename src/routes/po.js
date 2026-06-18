@@ -124,9 +124,11 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *               vendor_name:
  *                 type: string
  *               site:
- *                 type: string
- *               contact_person:
- *                 type: string
+                 type: string
+               site_address:
+                 type: string
+               contact_person:
+                 type: string
  *               vendor_address:
  *                 type: string
  *               primary_contact_name:
@@ -209,6 +211,7 @@ router.post("/", async (req, res) => {
     po_date,
     vendor_name,
     site,
+    site_address,
     contact_person,
     vendor_address,
     primary_contact_name,
@@ -235,11 +238,11 @@ router.post("/", async (req, res) => {
       `INSERT INTO pos (
         project_id, sample_id, company_name, company_subtitle, company_email, company_gst,
         indent_no, indent_date, order_no, po_date, vendor_name, site,
-        contact_person, vendor_address, primary_contact_name, primary_contact_number,
+        site_address, contact_person, vendor_address, primary_contact_name, primary_contact_number,
         secondary_contact_number, secondary_contact_name, items, discount,
         discount_amount, after_discount, cgst, cgst_amount, sgst, sgst_amount,
         total_amount, delivery, payment, notes, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31) RETURNING *`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32) RETURNING *`,
       [
         project_id,
         sample_id || null,
@@ -253,6 +256,7 @@ router.post("/", async (req, res) => {
         po_date,
         vendor_name,
         site,
+        site_address,
         contact_person,
         vendor_address,
         primary_contact_name,
@@ -440,6 +444,7 @@ router.put("/:id", async (req, res) => {
     po_date,
     vendor_name,
     site,
+    site_address,
     contact_person,
     vendor_address,
     primary_contact_name,
@@ -475,27 +480,28 @@ router.put("/:id", async (req, res) => {
         po_date = COALESCE($9, po_date),
         vendor_name = COALESCE($10, vendor_name),
         site = COALESCE($11, site),
-        contact_person = COALESCE($12, contact_person),
-        vendor_address = COALESCE($13, vendor_address),
-        primary_contact_name = COALESCE($14, primary_contact_name),
-        primary_contact_number = COALESCE($15, primary_contact_number),
-        secondary_contact_number = COALESCE($16, secondary_contact_number),
-        secondary_contact_name = COALESCE($17, secondary_contact_name),
-        items = COALESCE($18, items),
-        discount = COALESCE($19, discount),
-        discount_amount = COALESCE($20, discount_amount),
-        after_discount = COALESCE($21, after_discount),
-        cgst = COALESCE($22, cgst),
-        cgst_amount = COALESCE($23, cgst_amount),
-        sgst = COALESCE($24, sgst),
-        sgst_amount = COALESCE($25, sgst_amount),
-        total_amount = COALESCE($26, total_amount),
-        delivery = COALESCE($27, delivery),
-        payment = COALESCE($28, payment),
-        notes = COALESCE($29, notes),
-        status = COALESCE($30, status),
+        site_address = COALESCE($12, site_address),
+        contact_person = COALESCE($13, contact_person),
+        vendor_address = COALESCE($14, vendor_address),
+        primary_contact_name = COALESCE($15, primary_contact_name),
+        primary_contact_number = COALESCE($16, primary_contact_number),
+        secondary_contact_number = COALESCE($17, secondary_contact_number),
+        secondary_contact_name = COALESCE($18, secondary_contact_name),
+        items = COALESCE($19, items),
+        discount = COALESCE($20, discount),
+        discount_amount = COALESCE($21, discount_amount),
+        after_discount = COALESCE($22, after_discount),
+        cgst = COALESCE($23, cgst),
+        cgst_amount = COALESCE($24, cgst_amount),
+        sgst = COALESCE($25, sgst),
+        sgst_amount = COALESCE($26, sgst_amount),
+        total_amount = COALESCE($27, total_amount),
+        delivery = COALESCE($28, delivery),
+        payment = COALESCE($29, payment),
+        notes = COALESCE($30, notes),
+        status = COALESCE($31, status),
         updated_at = CURRENT_TIMESTAMP
-      WHERE po_id = $31 RETURNING *`,
+      WHERE po_id = $32 RETURNING *`,
       [
         sample_id,
         company_name,
@@ -508,6 +514,7 @@ router.put("/:id", async (req, res) => {
         po_date,
         vendor_name,
         site,
+        site_address,
         contact_person,
         vendor_address,
         primary_contact_name,
@@ -853,6 +860,7 @@ router.post("/:id/send-email", async (req, res) => {
       { label: "Vendor", value: po.vendor_name },
       { label: "Project", value: po.project_name },
       { label: "Site", value: po.site },
+      { label: "Site Address", value: po.site_address },
       { label: "Contact Person", value: po.contact_person },
       { label: "Indent No", value: po.indent_no },
       { label: "Indent Date", value: formatDate(po.indent_date) },

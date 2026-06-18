@@ -1,0 +1,1 @@
+ALTER TABLE pos ADD COLUMN IF NOT EXISTS site_address TEXT;
