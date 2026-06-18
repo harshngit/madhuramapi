@@ -124,11 +124,11 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *               vendor_name:
  *                 type: string
  *               site:
-                 type: string
-               site_address:
-                 type: string
-               contact_person:
-                 type: string
+ *                 type: string
+ *               site_address:
+ *                 type: string
+ *               contact_person:
+ *                 type: string
  *               vendor_address:
  *                 type: string
  *               primary_contact_name:
@@ -421,7 +421,95 @@ router.get("/:id", async (req, res) => {
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/POUpdate'
+ *             type: object
+ *             properties:
+ *               sample_id:
+ *                 type: string
+ *               company_name:
+ *                 type: string
+ *               company_subtitle:
+ *                 type: string
+ *               company_email:
+ *                 type: string
+ *               company_gst:
+ *                 type: string
+ *               indent_no:
+ *                 type: string
+ *               indent_date:
+ *                 type: string
+ *                 format: date
+ *               order_no:
+ *                 type: string
+ *               po_date:
+ *                 type: string
+ *                 format: date
+ *               vendor_name:
+ *                 type: string
+ *               site:
+ *                 type: string
+ *               site_address:
+ *                 type: string
+ *               contact_person:
+ *                 type: string
+ *               vendor_address:
+ *                 type: string
+ *               primary_contact_name:
+ *                 type: string
+ *               primary_contact_number:
+ *                 type: string
+ *               secondary_contact_number:
+ *                 type: string
+ *               secondary_contact_name:
+ *                 type: string
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     srno:
+ *                       type: integer
+ *                     hsn:
+ *                       type: string
+ *                     description:
+ *                       type: string
+ *                     qty:
+ *                       type: number
+ *                     UOM:
+ *                       type: string
+ *                     Rate:
+ *                       type: number
+ *                     Amount:
+ *                       type: number
+ *                     remark:
+ *                       type: string
+ *                     inventory_id:
+ *                       type: integer
+ *                     issued_qty:
+ *                       type: number
+ *               discount:
+ *                 type: number
+ *               discount_amount:
+ *                 type: number
+ *               after_discount:
+ *                 type: number
+ *               cgst:
+ *                 type: number
+ *               cgst_amount:
+ *                 type: number
+ *               sgst:
+ *                 type: number
+ *               sgst_amount:
+ *                 type: number
+ *               total_amount:
+ *                 type: number
+ *               delivery:
+ *                 type: string
+ *               payment:
+ *                 type: string
+ *               notes:
+ *                 type: string
+ *               status:
+ *                 type: string
  *     responses:
  *       200:
  *         description: PO updated successfully
