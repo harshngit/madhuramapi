@@ -134,6 +134,42 @@ router.get("/", async (req, res) => {
 
 /**
  * @swagger
+ * /api/vendors/search:
+ *   get:
+ *     summary: Search vendors by name (partial match, case-insensitive)
+ *     tags: [Vendors]
+ *     parameters:
+ *       - in: query
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Vendor name to search for
+ *     responses:
+ *       200:
+ *         description: Matching vendors
+ *       500:
+ *         description: Internal server error
+ */
+router.get("/search", async (req, res) => {
+  const { name } = req.query;
+  if (!name) {
+    return res.status(400).json({ error: "name query parameter is required" });
+  }
+  try {
+    const result = await pool.query(
+      "SELECT * FROM vendors WHERE vendor_name ILIKE $1 ORDER BY created_at DESC",
+      [`%${name}%`]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error searching vendors:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
  * /api/vendors/{id}:
  *   get:
  *     summary: Get a single vendor by ID
