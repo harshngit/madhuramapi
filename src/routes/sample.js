@@ -141,6 +141,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                 type: object
  *                 properties:
  *                   floor:        { type: string, example: "2nd" }
+ *                   flat_no:      { type: string, example: "A-101" }
  *                   block:        { type: string, example: "B" }
  *                   wing:         { type: string, example: "East" }
  *                   coordinates:  { type: string, example: "19.0760,72.8777" }
@@ -164,10 +165,12 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *           example:
  *             sample_id: "SAMPLE-001"
  *             project_id: 1
+ *             flats: "A-101, A-102"
  *             building_name: "Block A"
  *             site_name: "Main Site"
  *             location:
  *               floor: "2nd"
+ *               flat_no: "A-101"
  *               block: "B"
  *               wing: "East"
  *               coordinates: "19.0760,72.8777"
@@ -177,6 +180,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                 item_name: "Ceramic Tile"
  *                 brand_name: "Kajaria"
  *                 description: "60x60 Glossy White"
+ *                 specification: "Grade A, ISO certified"
  *                 unit: "Nos"
  *                 quantity: 100
  *                 value: 45.50
@@ -186,6 +190,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                 item_name: "Wall Putty"
  *                 brand_name: "Birla White"
  *                 description: "Interior Wall Putty 40kg"
+ *                 specification: "White cement based"
  *                 unit: "Bags"
  *                 quantity: 20
  *                 value: 380.00
