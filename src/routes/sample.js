@@ -134,6 +134,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *             properties:
  *               sample_id:        { type: string, example: "SAMPLE-001", description: "Unique sample ID provided by the frontend (can be alphanumeric)" }
  *               project_id:       { type: integer, example: 1 }
+ *               flats:            { type: string,  example: "A-101, A-102" }
  *               building_name:    { type: string,  example: "Block A" }
  *               site_name:        { type: string,  example: "Main Site" }
  *               location:
@@ -153,6 +154,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                     item_name:     { type: string,  example: "Ceramic Tile", description: "Name of the item" }
  *                     brand_name:    { type: string,  example: "Kajaria",      description: "Brand of the item" }
  *                     description:   { type: string,  example: "60x60 Glossy White" }
+ *                     specification: { type: string,  example: "Grade A, ISO certified" }
  *                     unit:          { type: string,  example: "Nos", description: "Unit of measurement (e.g., Nos, Kg, Mtr)" }
  *                     quantity:      { type: number,  example: 100 }
  *                     value:         { type: number,  example: 45.50 }
@@ -199,6 +201,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                 id:               { type: integer, example: 1, description: "Auto-generated table row ID" }
  *                 sample_id:        { type: string, example: "SAMPLE-001", description: "Frontend-supplied unique sample ID (alphanumeric)" }
  *                 project_id:       { type: integer, example: 1 }
+ *                 flats:            { type: string,  example: "A-101, A-102" }
  *                 building_name:    { type: string,  example: "Block A" }
  *                 site_name:        { type: string,  example: "Main Site" }
  *                 location:         { type: object }
@@ -212,6 +215,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                       item_name:          { type: string }
  *                       brand_name:         { type: string }
  *                       description:        { type: string }
+ *                       specification:      { type: string }
  *                       unit:               { type: string }
  *                       quantity:           { type: number }
  *                       value:              { type: number }
@@ -235,7 +239,7 @@ router.post("/create-sample", async (req, res) => {
 
     const {
       sample_id: frontend_sample_id,
-      project_id, building_name, site_name,
+      project_id, flats, building_name, site_name,
       location, work_done, item_description, add_fields,
     } = req.body;
 
@@ -247,12 +251,12 @@ router.post("/create-sample", async (req, res) => {
     // Insert sample using the sample_id supplied by the frontend
     const result = await client.query(
       `INSERT INTO samples
-         (sample_id, project_id, building_name, site_name, location, work_done, item_description, add_fields)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         (sample_id, project_id, flats, building_name, site_name, location, work_done, item_description, add_fields)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        RETURNING *`,
       [
         frontend_sample_id,
-        project_id, building_name, site_name,
+        project_id, flats || null, building_name, site_name,
         location ? JSON.stringify(location) : null,
         work_done,
         item_description ? JSON.stringify(item_description) : JSON.stringify([]),
@@ -439,7 +443,7 @@ router.put("/:id", async (req, res) => {
 
     const { id } = req.params;
     const {
-      building_name, site_name, location,
+      flats, building_name, site_name, location,
       work_done, item_description, add_fields, sample_file,
     } = req.body;
 
@@ -472,17 +476,19 @@ router.put("/:id", async (req, res) => {
 
     const result = await client.query(
       `UPDATE samples SET
-         building_name    = COALESCE($1, building_name),
-         site_name        = COALESCE($2, site_name),
-         location         = COALESCE($3, location),
-         work_done        = COALESCE($4, work_done),
-         item_description = COALESCE($5, item_description),
-         add_fields       = COALESCE($6, add_fields),
-         sample_file      = COALESCE($7, sample_file),
+         flats            = COALESCE($1, flats),
+         building_name    = COALESCE($2, building_name),
+         site_name        = COALESCE($3, site_name),
+         location         = COALESCE($4, location),
+         work_done        = COALESCE($5, work_done),
+         item_description = COALESCE($6, item_description),
+         add_fields       = COALESCE($7, add_fields),
+         sample_file      = COALESCE($8, sample_file),
          updated_at       = CURRENT_TIMESTAMP
-       WHERE sample_id = $8
+       WHERE sample_id = $9
        RETURNING *`,
       [
+        flats || null,
         building_name || null,
         site_name || null,
         location ? JSON.stringify(location) : null,

@@ -207,6 +207,7 @@ router.post("/upload-signature", uploadSignature.single("file"), (req, res) => {
  *               mirno:         { type: string }
  *               urgency:       { type: string }
  *               floor_no:      { type: string }
+ *               flat_no:       { type: string }
  *               date:          { type: string, format: date }
  *               items:
  *                 type: array
@@ -229,7 +230,7 @@ router.post("/upload-signature", uploadSignature.single("file"), (req, res) => {
 router.post("/", async (req, res) => {
   const {
     project_id, sample_id, project_name, pr_number,
-    workorder_no, location, mirno, urgency, floor_no, date,
+    workorder_no, location, mirno, urgency, floor_no, flat_no, date,
     items, approved_by, pr_file_path, signature_file_path,
   } = req.body;
 
@@ -245,13 +246,13 @@ router.post("/", async (req, res) => {
     const headerRes = await client.query(
       `INSERT INTO purchase_requisitions
          (project_id, sample_id, project_name, pr_number, workorder_no, location,
-          mirno, urgency, floor_no, date, approved_by, pr_file_path, signature_file_path)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          mirno, urgency, floor_no, flat_no, date, approved_by, pr_file_path, signature_file_path)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        RETURNING *`,
       [
         project_id, sample_id || null, project_name, pr_number || null,
         workorder_no || null, location || null, mirno || null,
-        urgency || null, floor_no || null, date || null, approved_by || null,
+        urgency || null, floor_no || null, flat_no || null, date || null, approved_by || null,
         pr_file_path || null, signature_file_path || null,
       ]
     );
@@ -449,7 +450,7 @@ router.get("/", async (req, res) => {
 router.put("/:id", async (req, res) => {
   const { id } = req.params;
   const {
-    project_name, pr_number, workorder_no, location, mirno, urgency, floor_no,
+    project_name, pr_number, workorder_no, location, mirno, urgency, floor_no, flat_no,
     date, items, approved_by, pr_file_path, signature_file_path, sample_id,
   } = req.body;
 
@@ -468,6 +469,7 @@ router.put("/:id", async (req, res) => {
     if (mirno !== undefined)               { fields.push(`mirno=$${c++}`);               vals.push(mirno); }
     if (urgency !== undefined)             { fields.push(`urgency=$${c++}`);             vals.push(urgency); }
     if (floor_no !== undefined)            { fields.push(`floor_no=$${c++}`);            vals.push(floor_no); }
+    if (flat_no !== undefined)             { fields.push(`flat_no=$${c++}`);             vals.push(flat_no); }
     if (date !== undefined)                { fields.push(`date=$${c++}`);                vals.push(date); }
     if (approved_by !== undefined)         { fields.push(`approved_by=$${c++}`);         vals.push(approved_by); }
     if (pr_file_path !== undefined)        { fields.push(`pr_file_path=$${c++}`);        vals.push(pr_file_path); }
