@@ -45,6 +45,8 @@ const upload = multer({ storage });
  *           items:
  *             type: object
  *             properties:
+ *               vendor_id:
+ *                 type: integer
  *               vendor_name:
  *                 type: string
  *               item_description:
@@ -141,6 +143,7 @@ router.post("/upload", upload.array("files"), (req, res) => {
  *                 items:
  *                   type: object
  *                   properties:
+ *                     vendor_id: { type: integer }
  *                     vendor_name: { type: string }
  *                     item_description: { type: string }
  *                     total_qty: { type: number }
