@@ -39,6 +39,7 @@ const vendorComparisonRoutes = require("./routes/vendor_comparison");
 const lodhaInvoiceRoutes     = require("./routes/lodha_invoice");
 const hiranandaniInvoiceRoutes = require("./routes/hiranandani_invoice");
 const signatureRoutes        = require("./routes/signatures");
+const notificationRoutes     = require("./routes/notifications");
 
 // Dashboard + Activity + WebSocket
 const { router: dashboardRouter, wsHandler } = require("./routes/dashboard");
@@ -132,6 +133,7 @@ app.use("/api/vendor-comparison", vendorComparisonRoutes);
 app.use("/api/lodha-invoice",     lodhaInvoiceRoutes);
 app.use("/api/hiranandani-invoice", hiranandaniInvoiceRoutes);
 app.use("/api/signatures",        signatureRoutes);
+app.use("/api/notifications",     notificationRoutes);
 
 // Dashboard + Activityroutes
 app.use("/api/dashboard", dashboardRouter);
