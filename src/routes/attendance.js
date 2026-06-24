@@ -168,7 +168,7 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *       201:
  *         description: Attendance record created
  *       403:
- *         description: User has reached 15 absent limit — attendance blocked
+ *         description: User is blocked
  *       500:
  *         description: Server error
  */
@@ -204,19 +204,6 @@ router.post("/", async (req, res) => {
       }
     }
 
-    const absentCountResult = await pool.query(
-      "SELECT COUNT(*) FROM attendance WHERE user_id = $1 AND status = 'absent'",
-      [user_id]
-    );
-    const absentCount = parseInt(absentCountResult.rows[0].count);
-
-    if (absentCount >= 15) {
-      return res.status(403).json({
-        error: "Attendance cannot be recorded. This user has reached the maximum limit of 15 absences.",
-        absent_count: absentCount,
-        user_id: user_id,
-      });
-    }
     // ─────────────────────────────────────────────────────────────────────────
 
     // Fetch user's designated check-in time for lateness calculation
@@ -512,7 +499,7 @@ router.get("/summary", async (req, res) => {
  * @swagger
  * /api/attendance/user/{user_id}/absent-count:
  *   get:
- *     summary: Get total absent count for a user (includes limit & eligibility flag)
+ *     summary: Get total absent count for a user
  *     tags: [Attendance]
  *     parameters:
  *       - in: path
@@ -543,8 +530,6 @@ router.get("/user/:user_id/absent-count", async (req, res) => {
     res.json({
       user_id,
       absent_count: absentCount,
-      limit: 15,
-      can_mark_attendance: absentCount < 15,
     });
   } catch (error) {
     console.error("Get absent count error:", error);
@@ -648,9 +633,7 @@ router.get("/blocked-users", async (req, res) => {
           '[]'::json
         ) AS block_history
       FROM auth_users u
-      WHERE u.is_blocked = true OR (
-        SELECT COUNT(*) FROM attendance a WHERE a.user_id = u.user_id AND a.status = 'absent'
-      ) >= 15
+      WHERE u.is_blocked = true
       ORDER BY u.name ASC
     `);
 
@@ -1010,7 +993,7 @@ router.get("/:id", async (req, res) => {
  * @swagger
  * /api/attendance/{id}/status:
  *   patch:
- *     summary: Update attendance status (present/absent/half_day) — blocked at 15 absences per user
+ *     summary: Update attendance status (present/absent/half_day)
  *     tags: [Attendance]
  *     parameters:
  *       - in: path
@@ -1031,8 +1014,6 @@ router.get("/:id", async (req, res) => {
  *         description: Status updated
  *       400:
  *         description: Invalid status value
- *       403:
- *         description: User already has 15 absences — cannot mark absent again
  *       404:
  *         description: Record not found
  */
@@ -1044,35 +1025,6 @@ router.patch("/:id/status", async (req, res) => {
     if (!['present', 'absent', 'half_day'].includes(status)) {
       return res.status(400).json({ error: "Status must be 'present', 'absent', or 'half_day'" });
     }
-
-    // ─── Block marking absent when user is already at/above the 15 limit ─────
-    if (status === 'absent') {
-      const attendanceRow = await pool.query(
-        "SELECT user_id, user_name, status FROM attendance WHERE attendance_id = $1",
-        [id]
-      );
-      if (attendanceRow.rows.length === 0) {
-        return res.status(404).json({ error: "Attendance record not found" });
-      }
-      const { user_id, user_name, status: currentStatus } = attendanceRow.rows[0];
-
-      // Only check limit if this record is not already absent (avoids double-counting)
-      if (currentStatus !== 'absent') {
-        const absentCountResult = await pool.query(
-          "SELECT COUNT(*) FROM attendance WHERE user_id = $1 AND status = 'absent'",
-          [user_id]
-        );
-        const absentCount = parseInt(absentCountResult.rows[0].count);
-        if (absentCount >= 15) {
-          return res.status(403).json({
-            error: `Cannot mark as absent. ${user_name || "This user"} has already reached the maximum limit of 15 absences.`,
-            absent_count: absentCount,
-            user_id: user_id,
-          });
-        }
-      }
-    }
-    // ─────────────────────────────────────────────────────────────────────────
 
     const result = await pool.query(
       `UPDATE attendance SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE attendance_id = $2 RETURNING *`,
