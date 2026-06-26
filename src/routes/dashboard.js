@@ -27,6 +27,7 @@
 
 const express = require("express");
 const { pool } = require("../db");
+const { sendRolePush } = require("../utils/pushHelper");
 
 const router = express.Router();
 
@@ -84,9 +85,6 @@ function logActivity({
     .then(({ rows }) => {
       broadcast({ type: "NEW_ACTIVITY", data: rows[0] });
 
-      // Save notification for the user who performed the action (or others?)
-      // Typically notifications are for OTHER users, but current implementation logs for performed_by.
-      // We'll stick to existing logic unless asked otherwise.
       if (performed_by) {
         const message = buildNotificationMessage(action, entity_type, entity_name);
         pool.query(
@@ -101,6 +99,13 @@ function logActivity({
           .then(({ rows: n }) => broadcast({ type: "NEW_NOTIFICATION", data: n[0] }))
           .catch((e) => console.error("Notification insert error:", e.message));
       }
+
+      // FCM push notification (role-based)
+      sendRolePush({
+        action, entity_type, entity_id, entity_name,
+        performed_by, performed_by_name,
+        project_id, meta: metaFinal,
+      }).catch((e) => console.error("Push notification error:", e.message));
     })
     .catch((err) => console.error("Activity log error:", err.message));
 }

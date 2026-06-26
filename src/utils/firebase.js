@@ -1,21 +1,33 @@
-const { initializeApp, getApps, cert } = require("firebase-admin/app");
-const { getMessaging } = require("firebase-admin/messaging");
+const admin = require("firebase-admin");
 
-if (getApps().length === 0) {
+const getInitializedApps = () =>
+  typeof admin.getApps === "function" ? admin.getApps() : (admin.apps || []);
+
+if (getInitializedApps().length === 0) {
   const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
     ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)
     : null;
 
   if (serviceAccount) {
-    initializeApp({ credential: cert(serviceAccount) });
+    admin.initializeApp({
+      credential: admin.credential
+        ? admin.credential.cert(serviceAccount)
+        : admin.cert(serviceAccount),
+    });
     console.log("Firebase Admin initialized");
   } else {
     console.warn("FIREBASE_SERVICE_ACCOUNT_JSON not set — push notifications disabled");
   }
 }
 
+function getMessagingInstance() {
+  return typeof admin.messaging === "function"
+    ? admin.messaging()
+    : require("firebase-admin/messaging").getMessaging();
+}
+
 async function sendPushNotification({ token, title, body, data = {} }) {
-  if (getApps().length === 0) return null;
+  if (getInitializedApps().length === 0) return null;
 
   try {
     const message = {
@@ -32,7 +44,7 @@ async function sendPushNotification({ token, title, body, data = {} }) {
         notification: { icon: "/icon.png", badge: "/badge.png" },
       },
     };
-    const response = await getMessaging().send(message);
+    const response = await getMessagingInstance().send(message);
     return response;
   } catch (error) {
     console.error("FCM send error:", error.message);
@@ -41,7 +53,7 @@ async function sendPushNotification({ token, title, body, data = {} }) {
 }
 
 async function sendPushToMultiple({ tokens, title, body, data = {} }) {
-  if (getApps().length === 0 || !tokens || tokens.length === 0) return [];
+  if (getInitializedApps().length === 0 || !tokens || tokens.length === 0) return [];
 
   const messages = tokens.map((token) => ({
     token,
@@ -59,7 +71,7 @@ async function sendPushToMultiple({ tokens, title, body, data = {} }) {
   }));
 
   try {
-    const response = await getMessaging().sendEach(messages);
+    const response = await getMessagingInstance().sendEach(messages);
     return response.responses;
   } catch (error) {
     console.error("FCM sendEach error:", error.message);

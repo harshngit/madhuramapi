@@ -3,6 +3,7 @@ const router = express.Router();
 const { pool } = require("../db");
 const jwt = require("jsonwebtoken");
 const { logActivity } = require("./dashboard");
+const { sendPushToUsers } = require("../utils/pushHelper");
 
 // ─── JWT helper ───────────────────────────────────────────────────────────────
 function getTokenUser(req) {
@@ -274,6 +275,29 @@ router.patch("/:leave_id/status", async (req, res) => {
     }
 
     res.json(result.rows[0]);
+
+    const leave = result.rows[0];
+    const title = status === "approved" ? "Leave Approved" : "Leave Rejected";
+    const body = status === "approved"
+      ? `Your leave request (${leave.from_date} - ${leave.to_date}) has been approved`
+      : `Your leave request (${leave.from_date} - ${leave.to_date}) has been rejected${remark ? ": " + remark : ""}`;
+
+    sendPushToUsers({
+      userIds: [leave.user_id],
+      title,
+      body,
+      data: { type: "leave", action: `leave_${status}`, leave_id: String(leave.leave_id) },
+    }).catch((e) => console.error("Leave push error:", e.message));
+
+    logActivity({
+      action: `leave_${status}`,
+      entity_type: "leave",
+      entity_id: leave.user_id,
+      entity_name: `Leave ${status} for ${leave.name}`,
+      performed_by: adminRes.rows[0].user_id,
+      performed_by_name: adminRes.rows[0].name,
+      meta: { leave_id: leave.leave_id, from_date: leave.from_date, to_date: leave.to_date, remark },
+    });
   } catch (error) {
     console.error("Update leave status error:", error);
     res.status(500).json({ error: "Failed to update leave status" });

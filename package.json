@@ -23,6 +23,7 @@
     "mammoth": "^1.11.0",
     "module-alias": "^2.2.3",
     "multer": "^2.0.2",
+    "node-cron": "^4.5.0",
     "nodemailer": "^8.0.2",
     "pdf-lib": "^1.17.1",
     "pdf2json": "^4.0.2",

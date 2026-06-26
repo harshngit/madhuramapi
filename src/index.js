@@ -43,6 +43,7 @@ const notificationRoutes     = require("./routes/notifications");
 
 // Dashboard + Activity + WebSocket
 const { router: dashboardRouter, wsHandler } = require("./routes/dashboard");
+const { startAttendanceCrons } = require("./cron/attendanceCron");
 
 const app = express();
 
@@ -155,4 +156,5 @@ console.log("WebSocket server ready at ws://localhost:<port>/ws/activity");
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 server.listen(port, () => {
   console.log(`Server running on port ${port}`);
+  startAttendanceCrons();
 });
