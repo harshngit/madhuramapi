@@ -528,12 +528,51 @@ router.put("/:id", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DELETE /api/sample/:id
-//
-// FIX: Now restores inventory stock for any item_description entries that
-// had inventory_id + inventory_issued = true when the sample was deleted.
-// Each restored movement is recorded in inventory_movements AND
-// inventory_history (via recordMovement → logInventoryHistory).
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/sample/{id}:
+ *   delete:
+ *     summary: Delete a sample by sample ID (restores inventory if items were issued)
+ *     tags: [Sample]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *         description: The sample_id to delete (e.g. "SAMPLE-001")
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               user_id:      { type: string, format: uuid, description: "Who is deleting" }
+ *               user_name:    { type: string }
+ *               project_name: { type: string }
+ *     responses:
+ *       200:
+ *         description: Sample deleted; inventory stock restored for any issued items
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:             { type: string, example: "Sample deleted" }
+ *                 inventory_restored:  { type: boolean }
+ *                 restored_items:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       inventory_id:  { type: integer }
+ *                       qty_restored:  { type: number }
+ *       404:
+ *         description: Sample not found
+ *       500:
+ *         description: Server error
+ */
 router.delete("/:id", async (req, res) => {
   const client = await pool.connect();
   try {
