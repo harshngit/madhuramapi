@@ -447,6 +447,75 @@ router.put("/:id", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/mir/:id/toggle-submitted  — flip mir_submited true <-> false
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/mir/{id}/toggle-submitted:
+ *   patch:
+ *     summary: Toggle a MIR's submitted status (true -> false, false -> true)
+ *     tags: [MIR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               user_id:   { type: string, description: "Who performed this action" }
+ *               user_name: { type: string }
+ *     responses:
+ *       200:
+ *         description: MIR with the flipped mir_submited value
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 mir_id:       { type: integer, example: 1 }
+ *                 mir_submited: { type: boolean, example: true }
+ *       404:
+ *         description: MIR not found
+ */
+router.patch("/:id/toggle-submitted", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      `UPDATE mirs
+          SET mir_submited = NOT COALESCE(mir_submited, FALSE),
+              updated_at   = CURRENT_TIMESTAMP
+        WHERE mir_id = $1
+        RETURNING *`,
+      [id]
+    );
+    if (result.rows.length === 0)
+      return res.status(404).json({ error: "MIR not found" });
+
+    const mir = result.rows[0];
+    res.json(mir);
+
+    logActivity({
+      action: mir.mir_submited ? "submitted" : "unsubmitted",
+      entity_type: "mir",
+      entity_id: id,
+      entity_name: mir.mir_refrence_no || `MIR #${id}`,
+      performed_by: req.body?.user_id || null,
+      performed_by_name: req.body?.user_name || null,
+      project_id: mir.project_id,
+      meta: { mir_submited: mir.mir_submited },
+    });
+  } catch (error) {
+    console.error("Error toggling MIR submitted status:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // DELETE /api/mir/:id  (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 router.delete("/:id", async (req, res) => {
