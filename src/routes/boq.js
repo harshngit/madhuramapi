@@ -881,22 +881,31 @@ router.post("/hiranandani", upload.single("boq_file"), async (req, res) => {
  * @swagger
  * /api/boq:
  *   get:
- *     summary: Get all BOQ items
+ *     summary: Get all BOQ items (includes used_quantity and remaining_quantity)
  *     tags: [BOQ]
  *     responses:
  *       200:
- *         description: List of all BOQs
+ *         description: List of all BOQs, each with used_quantity (consumed by samples) and remaining_quantity (quantity - used_quantity)
  *         content:
  *           application/json:
  *             schema:
  *               type: array
  *               items:
- *                 $ref: '#/components/schemas/BOQ'
+ *                 allOf:
+ *                   - $ref: '#/components/schemas/BOQ'
+ *                   - type: object
+ *                     properties:
+ *                       used_quantity:      { type: number, example: 30, description: "Total quantity consumed across all samples linked to this BOQ item" }
+ *                       remaining_quantity: { type: number, example: 70, description: "quantity - used_quantity" }
  */
 router.get("/", async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT * FROM boqs ORDER BY created_at DESC"
+      `SELECT *,
+              COALESCE(used_quantity, 0) AS used_quantity,
+              (COALESCE(quantity, 0) - COALESCE(used_quantity, 0)) AS remaining_quantity
+       FROM boqs
+       ORDER BY created_at DESC`
     );
     res.json(result.rows);
   } catch (err) {
@@ -913,7 +922,10 @@ router.get("/", async (req, res) => {
  * @swagger
  * /api/boq/items:
  *   get:
- *     summary: Get all BOQ items as clean JSON (item_no, description, unit, qty)
+ *     summary: Get all BOQ items as clean JSON (item_no, description, unit, qty, remaining_qty)
+ *     description: |
+ *       Use this to populate the "pick a BOQ item" list when creating a Sample.
+ *       `remaining_qty` (qty - used_qty) tells you how much is still available to link.
  *     tags: [BOQ]
  *     responses:
  *       200:
@@ -922,7 +934,11 @@ router.get("/", async (req, res) => {
 router.get("/items", async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT boq_id, item_code AS item_no, description, unit, quantity AS qty, project_id, project_name
+      `SELECT boq_id, item_code AS item_no, description, unit,
+              quantity AS qty,
+              COALESCE(used_quantity, 0) AS used_qty,
+              (COALESCE(quantity, 0) - COALESCE(used_quantity, 0)) AS remaining_qty,
+              project_id, project_name
        FROM boqs
        ORDER BY boq_id ASC`
     );
@@ -1401,7 +1417,7 @@ router.get("/project/:projectId/items", async (req, res) => {
  * @swagger
  * /api/boq/{id}:
  *   get:
- *     summary: Get a BOQ item by ID
+ *     summary: Get a BOQ item by ID (includes used_quantity, remaining_quantity, and the samples that used it)
  *     tags: [BOQ]
  *     parameters:
  *       - in: path
@@ -1415,19 +1431,50 @@ router.get("/project/:projectId/items", async (req, res) => {
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/BOQ'
+ *               allOf:
+ *                 - $ref: '#/components/schemas/BOQ'
+ *                 - type: object
+ *                   properties:
+ *                     used_quantity:      { type: number, example: 30 }
+ *                     remaining_quantity: { type: number, example: 70 }
+ *                     used_in_samples:
+ *                       type: array
+ *                       description: Samples that have linked (consumed quantity from) this BOQ item
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           sample_id:     { type: string, example: "SAMPLE-001" }
+ *                           building_name: { type: string, example: "Block A" }
+ *                           site_name:     { type: string, example: "Main Site" }
+ *                           project_id:    { type: integer, example: 1 }
+ *                           issued_qty:    { type: number, example: 30, description: "Quantity of this BOQ item consumed by that sample" }
  *       404:
  *         description: BOQ not found
  */
 router.get("/:id", async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT * FROM boqs WHERE boq_id = $1",
+      `SELECT *,
+              COALESCE(used_quantity, 0) AS used_quantity,
+              (COALESCE(quantity, 0) - COALESCE(used_quantity, 0)) AS remaining_quantity
+       FROM boqs WHERE boq_id = $1`,
       [req.params.id]
     );
     if (result.rows.length === 0)
       return res.status(404).json({ error: "BOQ not found" });
-    res.json(result.rows[0]);
+
+    const boq = result.rows[0];
+
+    // Reverse lookup: which samples have linked this BOQ item (element.boq_id in item_description[])
+    const samplesRes = await pool.query(
+      `SELECT s.sample_id, s.building_name, s.site_name, s.project_id,
+              (elem->>'boq_issued_qty')::numeric AS issued_qty
+         FROM samples s, jsonb_array_elements(s.item_description) elem
+        WHERE (elem->>'boq_id')::int = $1`,
+      [req.params.id]
+    );
+
+    res.json({ ...boq, used_in_samples: samplesRes.rows });
   } catch (err) {
     console.error("Error fetching BOQ:", err);
     res.status(500).json({ error: "Internal Server Error" });

@@ -93,6 +93,127 @@ async function processInventoryItems(client, {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// HELPER: scan item_description array and deduct "used_quantity" on any BOQ
+// item referenced via boq_id. Mirrors processInventoryItems() above, but
+// tracks consumption against boqs.quantity instead of inventories.
+//
+// item format (new fields added, all optional):
+//   {
+//     ...existing fields,
+//     boq_id,          ← NEW: links to boqs table
+//     boq_issued_qty,  ← NEW: qty to consume from that BOQ item (falls back to `quantity`)
+//   }
+// ─────────────────────────────────────────────────────────────────────────────
+async function processBoqItems(client, { items, previous_items = [] }) {
+  if (!Array.isArray(items) || items.length === 0) return;
+
+  const alreadyIssued = new Set(
+    previous_items
+      .filter(i => i.boq_id && i.boq_issued)
+      .map(i => Number(i.boq_id))
+  );
+
+  for (const item of items) {
+    if (!item.boq_id) continue;                          // no link → skip
+    if (alreadyIssued.has(Number(item.boq_id))) continue; // already issued → skip
+
+    const qty = Number(item.boq_issued_qty ?? item.quantity ?? 0);
+    if (qty <= 0) continue;
+
+    const boqRes = await client.query(
+      "SELECT item_code, quantity, used_quantity FROM boqs WHERE boq_id = $1 FOR UPDATE",
+      [item.boq_id]
+    );
+    if (boqRes.rows.length === 0)
+      throw new Error(`BOQ item ${item.boq_id} not found`);
+
+    const boq = boqRes.rows[0];
+    const remaining = Number(boq.quantity || 0) - Number(boq.used_quantity || 0);
+    if (remaining < qty)
+      throw new Error(
+        `Insufficient BOQ quantity for "${boq.item_code || `#${item.boq_id}`}": remaining ${remaining}, requested ${qty}`
+      );
+
+    await client.query(
+      `UPDATE boqs
+          SET used_quantity = COALESCE(used_quantity, 0) + $1,
+              updated_at = CURRENT_TIMESTAMP
+        WHERE boq_id = $2`,
+      [qty, item.boq_id]
+    );
+
+    // Mark item as issued so re-saves don't double-deduct
+    item.boq_issued = true;
+    item.boq_issued_at = new Date().toISOString();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPER: reverse of processBoqItems() — restore used_quantity on delete
+// ─────────────────────────────────────────────────────────────────────────────
+async function restoreBoqItems(client, items) {
+  if (!Array.isArray(items)) return;
+  for (const item of items) {
+    if (!item.boq_id || !item.boq_issued) continue;
+    const qty = Number(item.boq_issued_qty ?? item.quantity ?? 0);
+    if (qty <= 0) continue;
+
+    await client.query(
+      `UPDATE boqs
+          SET used_quantity = GREATEST(COALESCE(used_quantity, 0) - $1, 0),
+              updated_at = CURRENT_TIMESTAMP
+        WHERE boq_id = $2`,
+      [qty, item.boq_id]
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPER: enrich sample(s) item_description with the linked BOQ's item_code
+// and remaining_quantity, WITHOUT mutating what's stored in the DB. Used by
+// every read (GET) endpoint and by the create/update responses, so the
+// frontend (incl. anything that builds a download/export from this data)
+// always sees the current item_code for a BOQ-linked item.
+// ─────────────────────────────────────────────────────────────────────────────
+async function enrichWithBoqInfo(samples) {
+  const list = Array.isArray(samples) ? samples : [samples];
+
+  const boqIds = new Set();
+  list.forEach(s => {
+    const items = Array.isArray(s.item_description) ? s.item_description : [];
+    items.forEach(i => { if (i.boq_id) boqIds.add(Number(i.boq_id)); });
+  });
+
+  let boqMap = new Map();
+  if (boqIds.size > 0) {
+    const boqRes = await pool.query(
+      `SELECT boq_id, item_code, description, unit, quantity, used_quantity
+         FROM boqs WHERE boq_id = ANY($1)`,
+      [[...boqIds]]
+    );
+    boqMap = new Map(boqRes.rows.map(b => [b.boq_id, b]));
+  }
+
+  const enriched = list.map(s => {
+    const items = Array.isArray(s.item_description) ? s.item_description : [];
+    const enrichedItems = items.map(i => {
+      if (!i.boq_id) return i;
+      const boq = boqMap.get(Number(i.boq_id));
+      if (!boq) return i;
+      return {
+        ...i,
+        boq_item_code: boq.item_code,
+        boq_description: boq.description,
+        boq_remaining_quantity: Number(boq.quantity || 0) - Number(boq.used_quantity || 0),
+      };
+    });
+    return { ...s, item_description: enrichedItems };
+  });
+
+  return Array.isArray(samples) ? enriched : enriched[0];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/sample/upload
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/upload", upload.array("file"), (req, res) => {
@@ -161,6 +282,8 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                     value:         { type: number,  example: 45.50 }
  *                     inventory_id:  { type: integer, example: 12,   description: "Link to inventory item for auto stock-out" }
  *                     issued_qty:    { type: number,  example: 100,  description: "Qty to deduct from inventory (defaults to quantity)" }
+ *                     boq_id:        { type: integer, example: 7,    description: "Link to a BOQ item (boqs.boq_id) this sample line was taken from" }
+ *                     boq_issued_qty: { type: number, example: 100,  description: "Qty to consume from the BOQ item's remaining quantity (defaults to quantity)" }
  *               add_fields:       { type: array }
  *           example:
  *             sample_id: "SAMPLE-001"
@@ -197,7 +320,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *             add_fields: []
  *     responses:
  *       201:
- *         description: Sample created successfully; linked inventory items auto-deducted
+ *         description: Sample created successfully; linked inventory/BOQ items auto-deducted
  *         content:
  *           application/json:
  *             schema:
@@ -228,12 +351,19 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                       issued_qty:         { type: number }
  *                       inventory_issued:   { type: boolean }
  *                       inventory_issued_at: { type: string, format: date-time }
+ *                       boq_id:             { type: integer, description: "BOQ item this line was taken from" }
+ *                       boq_issued_qty:     { type: number }
+ *                       boq_issued:         { type: boolean }
+ *                       boq_issued_at:      { type: string, format: date-time }
+ *                       boq_item_code:      { type: string, description: "item_code of the linked BOQ item (looked up live, not stored)" }
+ *                       boq_description:    { type: string, description: "description of the linked BOQ item (looked up live, not stored)" }
+ *                       boq_remaining_quantity: { type: number, description: "Remaining quantity left on the linked BOQ item after this consumption" }
  *                 add_fields:       { type: array }
  *                 sample_file:      { type: string }
  *                 created_at:       { type: string, format: date-time }
  *                 updated_at:       { type: string, format: date-time }
  *       400:
- *         description: Insufficient stock, invalid project_id, or bad data
+ *         description: Insufficient stock/BOQ quantity, invalid project_id, or bad data
  *       500:
  *         description: Server error
  */
@@ -283,8 +413,11 @@ router.post("/create-sample", async (req, res) => {
       performed_by_name: req.body.created_by_name || req.body.user_name || null,
     });
 
-    // If any items were marked inventory_issued, update the stored JSONB
-    if (items.some(i => i.inventory_issued)) {
+    // Process BOQ consumption for any item with boq_id
+    await processBoqItems(client, { items });
+
+    // If any items were marked inventory_issued/boq_issued, update the stored JSONB
+    if (items.some(i => i.inventory_issued || i.boq_issued)) {
       await client.query(
         "UPDATE samples SET item_description = $1 WHERE sample_id = $2",
         [JSON.stringify(items), sample.sample_id]
@@ -293,7 +426,7 @@ router.post("/create-sample", async (req, res) => {
     }
 
     await client.query("COMMIT");
-    res.status(201).json(sample);
+    res.status(201).json(await enrichWithBoqInfo(sample));
 
     logActivity({
       action: "created", entity_type: "sample",
@@ -340,7 +473,7 @@ router.get("/", async (req, res) => {
       const linked = items.length > 0 && items.every(i => i.inventory_id);
       return { ...s, linked };
     });
-    res.json(samples);
+    res.json(await enrichWithBoqInfo(samples));
   } catch (error) {
     console.error("Error fetching samples:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -378,7 +511,7 @@ router.get("/project/:projectId", async (req, res) => {
       const linked = items.length > 0 && items.every(i => i.inventory_id);
       return { ...s, linked };
     });
-    res.json(samples);
+    res.json(await enrichWithBoqInfo(samples));
   } catch (error) {
     console.error("Error fetching samples by project:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -413,7 +546,7 @@ router.get("/:id", async (req, res) => {
     );
     if (result.rows.length === 0)
       return res.status(404).json({ error: "Sample not found" });
-    res.json(result.rows[0]);
+    res.json(await enrichWithBoqInfo(result.rows[0]));
   } catch (error) {
     console.error("Error fetching sample:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -428,16 +561,69 @@ router.get("/:id", async (req, res) => {
  * @swagger
  * /api/sample/{id}:
  *   put:
- *     summary: Update a sample (new inventory_id items auto stock-out)
+ *     summary: Update a sample (newly-added inventory_id/boq_id items auto stock-out / auto-consume)
  *     tags: [Sample]
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
  *         schema: { type: string }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               flats:            { type: string,  example: "A-101, A-102" }
+ *               building_name:    { type: string,  example: "Block A" }
+ *               site_name:        { type: string,  example: "Main Site" }
+ *               location:
+ *                 type: object
+ *                 properties:
+ *                   floor:        { type: string, example: "2nd" }
+ *                   flat_no:      { type: string, example: "A-101" }
+ *                   block:        { type: string, example: "B" }
+ *                   wing:         { type: string, example: "East" }
+ *                   coordinates:  { type: string, example: "19.0760,72.8777" }
+ *               work_done:        { type: string, example: "Flooring" }
+ *               item_description:
+ *                 type: array
+ *                 description: Full replacement list of item lines. Only items with a NEW (not previously issued) inventory_id/boq_id trigger a deduction.
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     sr_no:          { type: integer, example: 1 }
+ *                     item_name:      { type: string,  example: "Ceramic Tile" }
+ *                     brand_name:     { type: string,  example: "Kajaria" }
+ *                     description:    { type: string,  example: "60x60 Glossy White" }
+ *                     specification:  { type: string,  example: "Grade A, ISO certified" }
+ *                     unit:           { type: string,  example: "Nos" }
+ *                     quantity:       { type: number,  example: 100 }
+ *                     value:          { type: number,  example: 45.50 }
+ *                     inventory_id:   { type: integer, example: 12, description: "Link to inventory item for auto stock-out" }
+ *                     issued_qty:     { type: number,  example: 100, description: "Qty to deduct from inventory (defaults to quantity)" }
+ *                     boq_id:         { type: integer, example: 7,   description: "Link to a BOQ item (boqs.boq_id) this sample line was taken from" }
+ *                     boq_issued_qty: { type: number,  example: 100, description: "Qty to consume from the BOQ item's remaining quantity (defaults to quantity)" }
+ *               add_fields:       { type: array }
+ *               sample_file:      { type: string }
+ *               project_name:     { type: string, description: "Used for movement/history logging only" }
+ *               user_id:          { type: string, description: "Who is making this update" }
+ *               user_name:        { type: string }
+ *           example:
+ *             building_name: "Block A"
+ *             work_done: "Flooring - Phase 2"
+ *             item_description:
+ *               - sr_no: 1
+ *                 item_name: "Ceramic Tile"
+ *                 quantity: 100
+ *                 boq_id: 7
+ *                 boq_issued_qty: 100
  *     responses:
  *       200:
  *         description: Sample updated
+ *       400:
+ *         description: Insufficient stock/BOQ quantity or bad data
  *       404:
  *         description: Not found
  */
@@ -477,6 +663,9 @@ router.put("/:id", async (req, res) => {
         performed_by:    req.body.user_id || null,
         performed_by_name: req.body.user_name || null,
       });
+
+      // Process BOQ consumption for any newly added boq_id items
+      await processBoqItems(client, { items: newItems, previous_items: prevItems });
     }
 
     const result = await client.query(
@@ -506,7 +695,7 @@ router.put("/:id", async (req, res) => {
     );
 
     await client.query("COMMIT");
-    res.json(result.rows[0]);
+    res.json(await enrichWithBoqInfo(result.rows[0]));
 
     logActivity({
       action: "updated", entity_type: "sample",
@@ -618,6 +807,9 @@ router.delete("/:id", async (req, res) => {
       restoredItems.push({ inventory_id: item.inventory_id, qty_restored: qty });
     }
 
+    // ── Step 2b: restore BOQ used_quantity for items that were issued ─────────
+    await restoreBoqItems(client, items);
+
     // ── Step 3: delete the sample ─────────────────────────────────────────────
     await client.query(
       "DELETE FROM samples WHERE sample_id = $1",
@@ -718,6 +910,9 @@ router.delete("/project/:projectId", async (req, res) => {
           qty_restored: qty,
         });
       }
+
+      // Restore BOQ used_quantity for this sample's items too
+      await restoreBoqItems(client, items);
     }
 
     // Now delete all samples for the project
