@@ -309,6 +309,8 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                 value: 45.50
  *                 inventory_id: 12
  *                 issued_qty: 100
+ *                 boq_id: 7
+ *                 boq_issued_qty: 100
  *               - sr_no: 2
  *                 item_name: "Wall Putty"
  *                 brand_name: "Birla White"
@@ -455,6 +457,9 @@ router.post("/create-sample", async (req, res) => {
  * /api/sample:
  *   get:
  *     summary: Get all samples
+ *     description: |
+ *       Each item in `item_description` that carries a `boq_id` is enriched (live, not stored)
+ *       with `boq_item_code`, `boq_description`, and `boq_remaining_quantity` from the linked BOQ item.
  *     tags: [Sample]
  *     responses:
  *       200:
@@ -463,7 +468,23 @@ router.post("/create-sample", async (req, res) => {
  *           application/json:
  *             schema:
  *               type: array
- *               items: { type: object }
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   sample_id:     { type: string, example: "SAMPLE-001" }
+ *                   project_id:    { type: integer, example: 1 }
+ *                   linked:        { type: boolean, description: "true if every item has an inventory_id" }
+ *                   item_description:
+ *                     type: array
+ *                     items:
+ *                       type: object
+ *                       properties:
+ *                         boq_id:                 { type: integer, example: 7 }
+ *                         boq_issued_qty:         { type: number, example: 100 }
+ *                         boq_issued:             { type: boolean }
+ *                         boq_item_code:          { type: string,  example: "ITM-007", description: "Looked up live from the linked BOQ item" }
+ *                         boq_description:        { type: string }
+ *                         boq_remaining_quantity: { type: number }
  */
 router.get("/", async (req, res) => {
   try {
@@ -488,6 +509,9 @@ router.get("/", async (req, res) => {
  * /api/sample/project/{projectId}:
  *   get:
  *     summary: Get all samples for a specific project
+ *     description: |
+ *       Each item in `item_description` that carries a `boq_id` is enriched (live, not stored)
+ *       with `boq_item_code`, `boq_description`, and `boq_remaining_quantity` from the linked BOQ item.
  *     tags: [Sample]
  *     parameters:
  *       - in: path
@@ -497,6 +521,24 @@ router.get("/", async (req, res) => {
  *     responses:
  *       200:
  *         description: List of samples for the project
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   sample_id:  { type: string, example: "SAMPLE-001" }
+ *                   project_id: { type: integer, example: 1 }
+ *                   item_description:
+ *                     type: array
+ *                     items:
+ *                       type: object
+ *                       properties:
+ *                         boq_id:                 { type: integer, example: 7 }
+ *                         boq_item_code:          { type: string, example: "ITM-007" }
+ *                         boq_description:        { type: string }
+ *                         boq_remaining_quantity: { type: number }
  *       500:
  *         description: Server error
  */
@@ -526,6 +568,9 @@ router.get("/project/:projectId", async (req, res) => {
  * /api/sample/{id}:
  *   get:
  *     summary: Get a single sample by ID
+ *     description: |
+ *       Each item in `item_description` that carries a `boq_id` is enriched (live, not stored)
+ *       with `boq_item_code`, `boq_description`, and `boq_remaining_quantity` from the linked BOQ item.
  *     tags: [Sample]
  *     parameters:
  *       - in: path
@@ -535,6 +580,24 @@ router.get("/project/:projectId", async (req, res) => {
  *     responses:
  *       200:
  *         description: Sample details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sample_id:  { type: string, example: "SAMPLE-001" }
+ *                 project_id: { type: integer, example: 1 }
+ *                 item_description:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       boq_id:                 { type: integer, example: 7 }
+ *                       boq_issued_qty:         { type: number, example: 100 }
+ *                       boq_issued:             { type: boolean }
+ *                       boq_item_code:          { type: string, example: "ITM-007", description: "Looked up live from the linked BOQ item" }
+ *                       boq_description:        { type: string }
+ *                       boq_remaining_quantity: { type: number }
  *       404:
  *         description: Sample not found
  */
