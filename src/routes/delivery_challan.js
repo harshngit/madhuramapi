@@ -177,7 +177,7 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *                     boq_id:      { type: integer, description: "Link to a BOQ item (boqs.boq_id) — informational only, does not deduct BOQ quantity" }
  *                     boq_qty:     { type: number,  description: "Qty being delivered against that BOQ item" }
  *               challan_date:     { type: string, format: date }
- *               work_order_number:{ type: string }
+ *               work_order_number: { type: string }
  *               order_date:       { type: string, format: date }
  *               auto_sync_inventory: { type: boolean, default: true }
  *     responses:
