@@ -172,6 +172,8 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *                     size:             { type: string, example: "20MM" }
  *                     quantity:         { type: number, example: 11 }
  *                     unit:             { type: string, example: "NOS" }
+ *                     boq_id:           { type: integer, example: 7, description: "Link to a BOQ item (boqs.boq_id) — informational only, does not deduct BOQ quantity" }
+ *                     boq_qty:          { type: number,  example: 11, description: "Qty being recorded against that BOQ item" }
  *
  *               shaft_details:
  *                 type: array

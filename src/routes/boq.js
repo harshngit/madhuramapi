@@ -5,6 +5,7 @@ const fs = require("fs");
 const PDFParser = require("pdf2json");
 const { pool } = require("../db");
 const { logActivity } = require("./dashboard");
+const { getBoqUsageDetails } = require("../utils/boqUsage");
 
 const router = express.Router();
 
@@ -1490,7 +1491,58 @@ router.get("/project/:projectId/items", async (req, res) => {
  *                           building_name: { type: string, example: "Block A" }
  *                           site_name:     { type: string, example: "Main Site" }
  *                           project_id:    { type: integer, example: 1 }
- *                           issued_qty:    { type: number, example: 30, description: "Quantity of this BOQ item consumed by that sample" }
+ *                           qty:           { type: number, example: 30, description: "Quantity of this BOQ item consumed by that sample" }
+ *                     used_in_pr:
+ *                       type: array
+ *                       description: PRs that reference this BOQ item (informational — does not affect remaining_quantity)
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           pr_id:      { type: integer, example: 5 }
+ *                           pr_number:  { type: string, example: "PR-2026-001" }
+ *                           material_description: { type: string }
+ *                           qty:        { type: number }
+ *                           project_id: { type: integer }
+ *                     used_in_po:
+ *                       type: array
+ *                       description: POs that reference this BOQ item (informational)
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           po_id:      { type: integer, example: 9 }
+ *                           order_no:   { type: string }
+ *                           qty:        { type: number }
+ *                           project_id: { type: integer }
+ *                     used_in_itr:
+ *                       type: array
+ *                       description: ITRs that reference this BOQ item (informational)
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           itr_id:     { type: integer }
+ *                           itr_ref_no: { type: string }
+ *                           qty:        { type: number }
+ *                           project_id: { type: integer }
+ *                     used_in_dc:
+ *                       type: array
+ *                       description: Delivery Challans that reference this BOQ item (informational)
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           dc_id:           { type: integer }
+ *                           challan_number:  { type: string }
+ *                           qty:             { type: number }
+ *                           project_id:      { type: integer }
+ *                     usage_counts:
+ *                       type: object
+ *                       description: Count of references per source, plus a grand total across all 5
+ *                       properties:
+ *                         samples: { type: integer, example: 2 }
+ *                         pr:      { type: integer, example: 1 }
+ *                         po:      { type: integer, example: 1 }
+ *                         itr:     { type: integer, example: 0 }
+ *                         dc:      { type: integer, example: 3 }
+ *                         total:   { type: integer, example: 7 }
  *       404:
  *         description: BOQ not found
  */
@@ -1507,17 +1559,9 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ error: "BOQ not found" });
 
     const boq = result.rows[0];
+    const usage = await getBoqUsageDetails(req.params.id);
 
-    // Reverse lookup: which samples have linked this BOQ item (element.boq_id in item_description[])
-    const samplesRes = await pool.query(
-      `SELECT s.sample_id, s.building_name, s.site_name, s.project_id,
-              (elem->>'boq_issued_qty')::numeric AS issued_qty
-         FROM samples s, jsonb_array_elements(s.item_description) elem
-        WHERE (elem->>'boq_id')::int = $1`,
-      [req.params.id]
-    );
-
-    res.json({ ...boq, used_in_samples: samplesRes.rows });
+    res.json({ ...boq, ...usage });
   } catch (err) {
     console.error("Error fetching BOQ:", err);
     res.status(500).json({ error: "Internal Server Error" });

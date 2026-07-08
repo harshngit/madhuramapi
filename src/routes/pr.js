@@ -40,8 +40,11 @@ const uploadSignature = multer({ storage: signatureStorage });
 // PR item format (new fields, all optional):
 //   {
 //     material_description, unit, req_qty, make, place_of_utilisation,  ← existing
-//     inventory_id,    ← NEW: link to inventories row
-//     issued_qty,      ← NEW: qty to deduct (defaults to req_qty)
+//     inventory_id,    ← link to inventories row
+//     issued_qty,      ← qty to deduct (defaults to req_qty)
+//     boq_id,          ← NEW: link to boqs row (informational only — does not
+//                          deduct boqs.used_quantity; that's samples-only)
+//     boq_qty,         ← NEW: qty being requisitioned against that BOQ item
 //   }
 // ─────────────────────────────────────────────────────────────────────────────
 async function insertItems(client, prId, items, {
@@ -62,15 +65,17 @@ async function insertItems(client, prId, items, {
       item.make || null,
       item.place_of_utilisation || item.place_of_utilization || null,
       item.inventory_id || null,      // ← new column
-      item.issued_qty != null ? Number(item.issued_qty) : null  // ← new column
+      item.issued_qty != null ? Number(item.issued_qty) : null,  // ← new column
+      item.boq_id || null,            // ← new column
+      item.boq_qty != null ? Number(item.boq_qty) : null  // ← new column
     );
-    placeholders.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
+    placeholders.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
   }
 
   await client.query(
     `INSERT INTO purchase_requisition_items
        (pr_id, material_description, unit, req_qty, make,
-        place_of_utilisation, inventory_id, issued_qty)
+        place_of_utilisation, inventory_id, issued_qty, boq_id, boq_qty)
      VALUES ${placeholders.join(", ")}`,
     values
   );
@@ -133,7 +138,11 @@ async function getPrList(whereClause, values) {
              'issued_from_inventory',pri.issued_from_inventory,
              'issued_at',           pri.issued_at,
              'inventory_name',      inv.name,
-             'inventory_balance',   inv.current_quantity
+             'inventory_balance',   inv.current_quantity,
+             'boq_id',              pri.boq_id,
+             'boq_qty',             pri.boq_qty,
+             'boq_item_code',       b.item_code,
+             'boq_remaining_quantity', (COALESCE(b.quantity,0) - COALESCE(b.used_quantity,0))
            )
          ) FILTER (WHERE pri.pr_item_id IS NOT NULL),
          '[]'::json
@@ -141,6 +150,7 @@ async function getPrList(whereClause, values) {
      FROM purchase_requisitions pr
      LEFT JOIN purchase_requisition_items pri ON pri.pr_id = pr.pr_id
      LEFT JOIN inventories inv ON inv.inventory_id = pri.inventory_id
+     LEFT JOIN boqs b ON b.boq_id = pri.boq_id
      WHERE ${whereClause}
      GROUP BY pr.pr_id`,
     values
@@ -174,7 +184,7 @@ router.post("/upload-signature", uploadSignature.single("file"), (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/pr
 //
-// items array now supports inventory_id + issued_qty:
+// items array now supports inventory_id + issued_qty, and boq_id + boq_qty:
 //   {
 //     material_description: "Tile 60x60",
 //     unit: "sqft",
@@ -182,6 +192,8 @@ router.post("/upload-signature", uploadSignature.single("file"), (req, res) => {
 //     make: "Kajaria",
 //     inventory_id: 12,    ← which inventory item to consume
 //     issued_qty: 100,     ← qty to deduct (defaults to req_qty)
+//     boq_id: 7,           ← which BOQ item this line was requisitioned against (informational only)
+//     boq_qty: 100,        ← qty being requisitioned against that BOQ item
 //   }
 // ─────────────────────────────────────────────────────────────────────────────
 /**
@@ -221,6 +233,8 @@ router.post("/upload-signature", uploadSignature.single("file"), (req, res) => {
  *                     place_of_utilisation: { type: string }
  *                     inventory_id:         { type: integer, description: "Link to inventories item" }
  *                     issued_qty:           { type: number,  description: "Qty to deduct (default: req_qty)" }
+ *                     boq_id:               { type: integer, description: "Link to a BOQ item (boqs.boq_id) — informational only, does not deduct BOQ quantity" }
+ *                     boq_qty:              { type: number,  description: "Qty being requisitioned against that BOQ item" }
  *     responses:
  *       201:
  *         description: PR created; linked inventory items deducted
@@ -279,11 +293,16 @@ router.post("/", async (req, res) => {
                   'make',                pri.make,
                   'place_of_utilisation',pri.place_of_utilisation,
                   'inventory_id',        pri.inventory_id,
-                  'issued_qty',          pri.issued_qty
+                  'issued_qty',          pri.issued_qty,
+                  'boq_id',              pri.boq_id,
+                  'boq_qty',             pri.boq_qty,
+                  'boq_item_code',       b.item_code,
+                  'boq_remaining_quantity', (COALESCE(b.quantity,0) - COALESCE(b.used_quantity,0))
                 )
               ) FILTER (WHERE pri.pr_item_id IS NOT NULL), '[]'::json) AS items
          FROM purchase_requisitions pr
          LEFT JOIN purchase_requisition_items pri ON pri.pr_id = pr.pr_id
+         LEFT JOIN boqs b ON b.boq_id = pri.boq_id
         WHERE pr.pr_id = $1
         GROUP BY pr.pr_id`,
       [pr.pr_id]

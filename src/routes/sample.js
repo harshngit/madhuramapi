@@ -6,6 +6,7 @@ const path = require("path");
 const fs = require("fs");
 const { logActivity } = require("./dashboard");
 const { recordMovement } = require("./inventory"); // stock-out AND stock-in helper
+const { getBoqUsageCounts } = require("../utils/boqUsage");
 
 const uploadDir = path.join(__dirname, "../../uploads/sample");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -181,13 +182,18 @@ async function enrichWithBoqInfo(samples) {
   });
 
   let boqMap = new Map();
+  let usageCounts = {};
   if (boqIds.size > 0) {
-    const boqRes = await pool.query(
-      `SELECT boq_id, item_code, description, unit, quantity, used_quantity
-         FROM boqs WHERE boq_id = ANY($1)`,
-      [[...boqIds]]
-    );
+    const [boqRes, counts] = await Promise.all([
+      pool.query(
+        `SELECT boq_id, item_code, description, unit, quantity, used_quantity
+           FROM boqs WHERE boq_id = ANY($1)`,
+        [[...boqIds]]
+      ),
+      getBoqUsageCounts([...boqIds]),
+    ]);
     boqMap = new Map(boqRes.rows.map(b => [b.boq_id, b]));
+    usageCounts = counts;
   }
 
   const enriched = list.map(s => {
@@ -201,6 +207,8 @@ async function enrichWithBoqInfo(samples) {
         boq_item_code: boq.item_code,
         boq_description: boq.description,
         boq_remaining_quantity: Number(boq.quantity || 0) - Number(boq.used_quantity || 0),
+        // Total times this BOQ item has been referenced system-wide (PR + PO + ITR + DC + samples)
+        boq_total_usage_count: usageCounts[Number(i.boq_id)]?.total ?? 0,
       };
     });
     return { ...s, item_description: enrichedItems };
