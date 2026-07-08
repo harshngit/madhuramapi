@@ -1324,6 +1324,7 @@ router.post("/parse-pdf/hiranandani", upload.single("boq_file"), async (req, res
  * /api/boq/project/{projectId}:
  *   get:
  *     summary: Get all BOQ records for a project, including total_amount summary
+ *     description: Each BOQ row includes used_quantity (consumed by samples) and remaining_quantity (quantity - used_quantity, can go negative if over-consumed).
  *     tags: [BOQ]
  *     parameters:
  *       - in: path
@@ -1334,6 +1335,23 @@ router.post("/parse-pdf/hiranandani", upload.single("boq_file"), async (req, res
  *     responses:
  *       200:
  *         description: BOQs for the project
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 project_id:   { type: integer, example: 1 }
+ *                 total_items:  { type: integer, example: 12 }
+ *                 total_amount: { type: number, example: 458000.50 }
+ *                 boqs:
+ *                   type: array
+ *                   items:
+ *                     allOf:
+ *                       - $ref: '#/components/schemas/BOQ'
+ *                       - type: object
+ *                         properties:
+ *                           used_quantity:      { type: number, example: 30 }
+ *                           remaining_quantity: { type: number, example: 70 }
  *       404:
  *         description: No BOQ items found for this project
  */
@@ -1341,7 +1359,10 @@ router.get("/project/:projectId", async (req, res) => {
   try {
     const { projectId } = req.params;
     const result = await pool.query(
-      "SELECT * FROM boqs WHERE project_id = $1 ORDER BY boq_id ASC",
+      `SELECT *,
+              COALESCE(used_quantity, 0) AS used_quantity,
+              (COALESCE(quantity, 0) - COALESCE(used_quantity, 0)) AS remaining_quantity
+       FROM boqs WHERE project_id = $1 ORDER BY boq_id ASC`,
       [projectId]
     );
 
@@ -1372,7 +1393,7 @@ router.get("/project/:projectId", async (req, res) => {
  * @swagger
  * /api/boq/project/{projectId}/items:
  *   get:
- *     summary: Get item_no, description, unit, qty for a project
+ *     summary: Get item_no, description, unit, qty, remaining_qty for a project
  *     tags: [BOQ]
  *     parameters:
  *       - in: path
@@ -1383,6 +1404,25 @@ router.get("/project/:projectId", async (req, res) => {
  *     responses:
  *       200:
  *         description: Slim item list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 project_id: { type: integer, example: 1 }
+ *                 total:      { type: integer, example: 12 }
+ *                 items:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       boq_id:      { type: integer, example: 7 }
+ *                       item_no:     { type: string,  example: "998322" }
+ *                       description: { type: string }
+ *                       unit:        { type: string,  example: "Sqft" }
+ *                       qty:         { type: number,  example: 1000 }
+ *                       used_qty:    { type: number,  example: 411 }
+ *                       remaining_qty: { type: number, example: 589 }
  *       404:
  *         description: No BOQ items found for this project
  */
@@ -1390,7 +1430,10 @@ router.get("/project/:projectId/items", async (req, res) => {
   try {
     const { projectId } = req.params;
     const result = await pool.query(
-      `SELECT boq_id, item_code AS item_no, description, unit, quantity AS qty
+      `SELECT boq_id, item_code AS item_no, description, unit,
+              quantity AS qty,
+              COALESCE(used_quantity, 0) AS used_qty,
+              (COALESCE(quantity, 0) - COALESCE(used_quantity, 0)) AS remaining_qty
        FROM boqs WHERE project_id = $1 ORDER BY boq_id ASC`,
       [projectId]
     );

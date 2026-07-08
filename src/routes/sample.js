@@ -127,13 +127,9 @@ async function processBoqItems(client, { items, previous_items = [] }) {
     if (boqRes.rows.length === 0)
       throw new Error(`BOQ item ${item.boq_id} not found`);
 
-    const boq = boqRes.rows[0];
-    const remaining = Number(boq.quantity || 0) - Number(boq.used_quantity || 0);
-    if (remaining < qty)
-      throw new Error(
-        `Insufficient BOQ quantity for "${boq.item_code || `#${item.boq_id}`}": remaining ${remaining}, requested ${qty}`
-      );
-
+    // No hard block on insufficient quantity — BOQ quantities are planning
+    // estimates, not a hard cap. used_quantity/remaining_quantity are just
+    // calculated and can go negative (over-consumption) without erroring.
     await client.query(
       `UPDATE boqs
           SET used_quantity = COALESCE(used_quantity, 0) + $1,
@@ -365,7 +361,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                 created_at:       { type: string, format: date-time }
  *                 updated_at:       { type: string, format: date-time }
  *       400:
- *         description: Insufficient stock/BOQ quantity, invalid project_id, or bad data
+ *         description: Insufficient inventory stock, invalid project_id, or bad data (BOQ quantity is never blocked — remaining_quantity can go negative)
  *       500:
  *         description: Server error
  */
@@ -686,7 +682,7 @@ router.get("/:id", async (req, res) => {
  *       200:
  *         description: Sample updated
  *       400:
- *         description: Insufficient stock/BOQ quantity or bad data
+ *         description: Insufficient inventory stock or bad data (BOQ quantity is never blocked — remaining_quantity can go negative)
  *       404:
  *         description: Not found
  */
