@@ -21,6 +21,18 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+const referenceDocDir = path.join(__dirname, "../../uploads/mir_reference_docs");
+if (!fs.existsSync(referenceDocDir)) fs.mkdirSync(referenceDocDir, { recursive: true });
+
+const referenceDocStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, referenceDocDir),
+  filename: (req, file, cb) => {
+    const u = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, u + path.extname(file.originalname));
+  },
+});
+const uploadReferenceDoc = multer({ storage: referenceDocStorage });
+
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPER: scan MIR items array and run stock-out for any item carrying
 // an inventory_id that has NOT already been issued (inventory_issued !== true).
@@ -92,6 +104,56 @@ async function processMirInventory(client, {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Template support: Lodha and Hiranandani each store their template-specific
+// fields inside one JSONB column (lodha_data / hiranandani_data) rather than
+// as a pile of separate table columns. Helpers below build/merge that JSONB
+// blob and flatten it back to top-level keys on read, so the API's request
+// and response bodies match the original nested shape the frontend sends.
+// ─────────────────────────────────────────────────────────────────────────────
+const LODHA_KEYS = [
+  "request_submission", "contractor_part", "lodha_pmc",
+  "template_ref", "template_revision", "template_date",
+];
+
+const HIRANANDANI_KEYS = [
+  "control_form", "revision", "location", "material_to_inspect", "storage_location",
+  "attachments", "notes", "material_rows",
+  "mir_raised_by_name", "mir_raised_by_date_signature",
+  "received_by_name", "received_by_date_signature",
+  "inspection_engineer_comments", "approval_code",
+  "checked_by_client_representative", "checked_by_date_signature",
+  "issued_by_name", "issued_by_date_signature",
+  "close_out",
+];
+
+// Pick only the keys the caller actually sent (so a partial PUT doesn't wipe
+// fields it didn't mention), merged on top of whatever was already stored.
+function mergeTemplateData(existing, body, keys) {
+  const patch = {};
+  for (const k of keys) if (body[k] !== undefined) patch[k] = body[k];
+  return { ...(existing || {}), ...patch };
+}
+
+// Spread the template-specific JSONB blob back onto the row so the response
+// shape matches the original request body (nested sub-objects stay nested;
+// only the blob's own top-level keys get lifted onto the row).
+function flattenMir(row) {
+  if (!row) return row;
+  const { lodha_data, hiranandani_data, ...rest } = row;
+  if (row.template_type === "lodha" && lodha_data) return { ...rest, ...lodha_data };
+  if (row.template_type === "hiranandani" && hiranandani_data) return { ...rest, ...hiranandani_data };
+  return rest;
+}
+
+// Behind a reverse proxy, req.protocol/req.get('host') can report the
+// internal http://localhost — prefer the forwarded headers when present.
+function getBaseUrl(req) {
+  const proto = req.headers["x-forwarded-proto"] || req.protocol;
+  const host  = req.headers["x-forwarded-host"] || req.get("host");
+  return `${proto}://${host}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mir/upload
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/upload", upload.single("file"), (req, res) => {
@@ -106,6 +168,49 @@ router.post("/upload", upload.single("file"), (req, res) => {
       meta: { filePath },
     });
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mir/upload-reference-doc
+//
+// Upload a single reference document and get back the exact
+// { file_name, file_url } object shape used in refrence_docs_attached[],
+// with file_url as a full absolute URL (protocol + host + path).
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/mir/upload-reference-doc:
+ *   post:
+ *     summary: Upload a reference doc, get back { file_name, file_url } (file_url is a full URL)
+ *     tags: [MIR]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [file]
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Uploaded — append this object to refrence_docs_attached[]
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 file_name: { type: string, example: "test-certificate.pdf" }
+ *                 file_url:  { type: string, example: "https://api.madhuram.enterprises/uploads/mir_reference_docs/1720000000000-123456789.pdf" }
+ *       400:
+ *         description: No file uploaded
+ */
+router.post("/upload-reference-doc", uploadReferenceDoc.single("file"), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+  const file_url = `${getBaseUrl(req)}/uploads/mir_reference_docs/${req.file.filename}`;
+  res.json({ file_name: req.file.originalname, file_url });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -142,7 +247,13 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *               material_code:        { type: string }
  *               inspection_date_time: { type: string, format: date-time }
  *               client_submission_date: { type: string, format: date }
- *               refrence_docs_attached: { type: string }
+ *               refrence_docs_attached:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     file_name: { type: string }
+ *                     file_url:  { type: string }
  *               mir_submited:         { type: boolean }
  *               dynamic_field:        { type: array }
  *               project_id:           { type: integer }
@@ -195,7 +306,7 @@ router.post("/", async (req, res) => {
         project_name, project_code, client_name, pmc, contractor,
         vendor_code, challan_no, mir_refrence_no, material_code,
         inspection_date_time, client_submission_date,
-        refrence_docs_attached, mir_submited,
+        JSON.stringify(refrence_docs_attached || []), mir_submited,
         JSON.stringify(dynamic_field || []),
         project_id, po_id || null,
         JSON.stringify(mirItems),
@@ -248,6 +359,538 @@ router.post("/", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mir/lodha  — create a Lodha-template MIR
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/mir/lodha:
+ *   post:
+ *     summary: Create a Lodha-template MIR
+ *     tags: [MIR]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [project_id]
+ *             properties:
+ *               project_name:         { type: string }
+ *               project_code:         { type: string }
+ *               client_name:          { type: string }
+ *               pmc:                  { type: string }
+ *               contractor:           { type: string }
+ *               vendor_code:          { type: string }
+ *               po_id:                { type: integer }
+ *               challan_no:           { type: string }
+ *               mir_refrence_no:      { type: string }
+ *               material_code:        { type: string }
+ *               inspection_date_time: { type: string, format: date-time }
+ *               client_submission_date: { type: string, format: date }
+ *               refrence_docs_attached:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     file_name: { type: string }
+ *                     file_url:  { type: string }
+ *               project_id:           { type: integer }
+ *               mir_submited:         { type: boolean }
+ *               request_submission:
+ *                 type: object
+ *                 properties:
+ *                   submitted_to: { type: string }
+ *                   discipline:   { type: array, items: { type: string } }
+ *               contractor_part:
+ *                 type: object
+ *                 properties:
+ *                   material_submittal_approved:  { type: string }
+ *                   approval_ref_no:               { type: string }
+ *                   previous_qty:                  { type: string }
+ *                   current_qty:                   { type: string }
+ *                   cumulative_qty:                { type: string }
+ *                   boq_reference:                 { type: string }
+ *                   manufacturer_country:          { type: string }
+ *                   supplier:                       { type: string }
+ *                   delivery_note_number:           { type: string }
+ *                   receipt_date:                   { type: string }
+ *                   storage_location:               { type: string }
+ *                   test_certificate_delivered:     { type: string }
+ *                   field_test_compliance_note:     { type: string }
+ *                   third_party_test_contractor_compliance_note: { type: string }
+ *                   third_party_test_lodha_compliance_note:      { type: string }
+ *                   contractor_name:                { type: string }
+ *                   contractor_signature:           { type: string }
+ *                   contractor_date:                { type: string }
+ *               lodha_pmc:
+ *                 type: object
+ *                 properties:
+ *                   inspection_reports:
+ *                     type: object
+ *                     properties:
+ *                       physical_damage:            { type: string }
+ *                       delivery_note_correct:      { type: string }
+ *                       conform_approved_submittal: { type: string }
+ *                       mtc_delivered:               { type: string }
+ *                       field_test_compliance:       { type: string }
+ *                       third_party_contractor_scope: { type: string }
+ *                       third_party_lodha_scope:      { type: string }
+ *                   sign_offs:
+ *                     type: object
+ *                     properties:
+ *                       civil_project_manager: { type: string }
+ *                       civil_quality_manager: { type: string }
+ *                       facade_manager:        { type: string }
+ *                       landscape_architect:   { type: string }
+ *                       mep_manager:           { type: string }
+ *                   comments:      { type: string }
+ *                   result_code:   { type: string }
+ *                   result_name:   { type: string }
+ *                   result_signature: { type: string }
+ *                   result_date:   { type: string }
+ *                   distribution:
+ *                     type: object
+ *                     properties:
+ *                       lodha:      { type: boolean }
+ *                       contractor: { type: boolean }
+ *                       others:     { type: string }
+ *               template_ref:      { type: string }
+ *               template_revision: { type: string }
+ *               template_date:     { type: string }
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     srno:           { type: integer }
+ *                     hsn:            { type: string }
+ *                     item_code:      { type: string }
+ *                     description:    { type: string }
+ *                     name:           { type: string }
+ *                     qty:            { type: number }
+ *                     uom:            { type: string }
+ *                     rate:           { type: number }
+ *                     amount:         { type: number }
+ *                     remark:         { type: string }
+ *                     inspected:      { type: boolean }
+ *                     include_in_mir: { type: boolean }
+ *                     inventory_id:   { type: integer, description: "Link to inventories item" }
+ *                     issued_qty:     { type: number,  description: "Qty to deduct (default: qty)" }
+ *           example:
+ *             project_name: ""
+ *             project_code: ""
+ *             client_name: ""
+ *             pmc: ""
+ *             contractor: ""
+ *             vendor_code: ""
+ *             po_id: 1
+ *             challan_no: ""
+ *             mir_refrence_no: ""
+ *             material_code: ""
+ *             inspection_date_time: "2026-07-08T00:00:00.000Z"
+ *             client_submission_date: "2026-07-08"
+ *             refrence_docs_attached:
+ *               - file_name: ""
+ *                 file_url: ""
+ *             project_id: 1
+ *             mir_submited: true
+ *             request_submission:
+ *               submitted_to: ""
+ *               discipline: []
+ *             contractor_part:
+ *               material_submittal_approved: ""
+ *               approval_ref_no: ""
+ *               previous_qty: ""
+ *               current_qty: ""
+ *               cumulative_qty: ""
+ *               boq_reference: ""
+ *               manufacturer_country: ""
+ *               supplier: ""
+ *               delivery_note_number: ""
+ *               receipt_date: ""
+ *               storage_location: ""
+ *               test_certificate_delivered: ""
+ *               field_test_compliance_note: ""
+ *               third_party_test_contractor_compliance_note: ""
+ *               third_party_test_lodha_compliance_note: ""
+ *               contractor_name: ""
+ *               contractor_signature: ""
+ *               contractor_date: ""
+ *             lodha_pmc:
+ *               inspection_reports:
+ *                 physical_damage: ""
+ *                 delivery_note_correct: ""
+ *                 conform_approved_submittal: ""
+ *                 mtc_delivered: ""
+ *                 field_test_compliance: ""
+ *                 third_party_contractor_scope: ""
+ *                 third_party_lodha_scope: ""
+ *               sign_offs:
+ *                 civil_project_manager: ""
+ *                 civil_quality_manager: ""
+ *                 facade_manager: ""
+ *                 landscape_architect: ""
+ *                 mep_manager: ""
+ *               comments: ""
+ *               result_code: ""
+ *               result_name: ""
+ *               result_signature: ""
+ *               result_date: ""
+ *               distribution:
+ *                 lodha: false
+ *                 contractor: false
+ *                 others: ""
+ *             template_ref: ""
+ *             template_revision: ""
+ *             template_date: ""
+ *             items:
+ *               - srno: 1
+ *                 hsn: ""
+ *                 item_code: ""
+ *                 description: ""
+ *                 name: ""
+ *                 qty: 0
+ *                 uom: ""
+ *                 rate: 0
+ *                 amount: 0
+ *                 remark: ""
+ *                 inspected: false
+ *                 include_in_mir: true
+ *     responses:
+ *       201:
+ *         description: Lodha MIR created
+ *       400:
+ *         description: Insufficient stock or bad data
+ */
+router.post("/lodha", async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const {
+      project_name, project_code, client_name, pmc, contractor, vendor_code,
+      po_id, challan_no, mir_refrence_no, material_code,
+      inspection_date_time, client_submission_date, refrence_docs_attached,
+      project_id, mir_submited, items,
+    } = req.body;
+
+    const mirItems  = items || [];
+    const lodhaData = mergeTemplateData({}, req.body, LODHA_KEYS);
+
+    const result = await client.query(
+      `INSERT INTO mirs (
+         project_name, project_code, client_name, pmc, contractor, vendor_code,
+         po_id, challan_no, mir_refrence_no, material_code,
+         inspection_date_time, client_submission_date, refrence_docs_attached,
+         project_id, template_type, mir_submited, lodha_data, items
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'lodha',$15,$16,$17)
+       RETURNING *`,
+      [
+        project_name, project_code, client_name, pmc, contractor, vendor_code,
+        po_id || null, challan_no, mir_refrence_no, material_code,
+        inspection_date_time, client_submission_date,
+        JSON.stringify(refrence_docs_attached || []),
+        project_id, mir_submited ?? false,
+        JSON.stringify(lodhaData),
+        JSON.stringify(mirItems),
+      ]
+    );
+
+    const mir = result.rows[0];
+
+    await processMirInventory(client, {
+      items:             mirItems,
+      mir_id:            mir.mir_id,
+      mir_ref:           mir_refrence_no || `MIR #${mir.mir_id}`,
+      project_id,
+      project_name,
+      performed_by:      req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+    });
+
+    if (mirItems.some(i => i.inventory_issued)) {
+      await client.query("UPDATE mirs SET items=$1 WHERE mir_id=$2", [JSON.stringify(mirItems), mir.mir_id]);
+      mir.items = mirItems;
+    }
+
+    await client.query("COMMIT");
+    res.status(201).json(flattenMir(mir));
+
+    logActivity({
+      action: "created", entity_type: "mir",
+      entity_id: mir.mir_id,
+      entity_name: mir_refrence_no || `MIR #${mir.mir_id}`,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: mir.project_id,
+      meta: { mir_refrence_no, template_type: "lodha" },
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Error creating Lodha MIR:", error.message);
+    if (error.code === "23503")
+      return res.status(400).json({ error: "Invalid project_id: Project does not exist" });
+    res.status(400).json({ error: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mir/hiranandani  — create a Hiranandani-template MIR
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/mir/hiranandani:
+ *   post:
+ *     summary: Create a Hiranandani-template MIR
+ *     tags: [MIR]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [project_id]
+ *             properties:
+ *               project_name:         { type: string }
+ *               project_code:         { type: string }
+ *               client_name:          { type: string }
+ *               pmc:                  { type: string }
+ *               contractor:           { type: string }
+ *               vendor_code:          { type: string }
+ *               po_id:                { type: integer }
+ *               challan_no:           { type: string }
+ *               mir_refrence_no:      { type: string }
+ *               material_code:        { type: string }
+ *               inspection_date_time: { type: string, format: date-time }
+ *               client_submission_date: { type: string, format: date }
+ *               refrence_docs_attached:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     file_name: { type: string }
+ *                     file_url:  { type: string }
+ *               project_id:           { type: integer }
+ *               mir_submited:         { type: boolean }
+ *               control_form:         { type: string }
+ *               revision:             { type: string }
+ *               location:             { type: string }
+ *               material_to_inspect:  { type: string }
+ *               storage_location:     { type: string }
+ *               attachments:          { type: string }
+ *               notes:
+ *                 type: object
+ *                 properties:
+ *                   manufacturer:            { type: string }
+ *                   purchase_order_no:       { type: string }
+ *                   manufacturer_date:       { type: string }
+ *                   challan_invoice_no:      { type: string }
+ *                   expiry_date:             { type: string }
+ *                   delivery_date:           { type: string }
+ *                   batch_no:                { type: string }
+ *                   material_submittal_ref:  { type: string }
+ *                   source_country:          { type: string }
+ *                   specification_ref:       { type: string }
+ *                   quantity_delivered:      { type: string }
+ *                   drawings_ref:            { type: string }
+ *               material_rows:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     material: { type: string }
+ *                     size:     { type: string }
+ *                     quantity: { type: string }
+ *                     unit:     { type: string }
+ *               mir_raised_by_name:               { type: string }
+ *               mir_raised_by_date_signature:     { type: string }
+ *               received_by_name:                 { type: string }
+ *               received_by_date_signature:       { type: string }
+ *               inspection_engineer_comments:     { type: string }
+ *               approval_code:                    { type: string }
+ *               checked_by_client_representative: { type: string }
+ *               checked_by_date_signature:        { type: string }
+ *               issued_by_name:                   { type: string }
+ *               issued_by_date_signature:         { type: string }
+ *               close_out:
+ *                 type: object
+ *                 properties:
+ *                   action_taken:    { type: string }
+ *                   checked_by:      { type: string }
+ *                   status:          { type: string }
+ *                   date_signature:  { type: string }
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     srno:           { type: integer }
+ *                     hsn:            { type: string }
+ *                     item_code:      { type: string }
+ *                     description:    { type: string }
+ *                     name:           { type: string }
+ *                     qty:            { type: number }
+ *                     uom:            { type: string }
+ *                     rate:           { type: number }
+ *                     amount:         { type: number }
+ *                     remark:         { type: string }
+ *                     inspected:      { type: boolean }
+ *                     include_in_mir: { type: boolean }
+ *                     inventory_id:   { type: integer, description: "Link to inventories item" }
+ *                     issued_qty:     { type: number,  description: "Qty to deduct (default: qty)" }
+ *           example:
+ *             project_name: ""
+ *             project_code: ""
+ *             client_name: ""
+ *             pmc: ""
+ *             contractor: ""
+ *             vendor_code: ""
+ *             po_id: 1
+ *             challan_no: ""
+ *             mir_refrence_no: ""
+ *             material_code: ""
+ *             inspection_date_time: "2026-07-08T00:00:00.000Z"
+ *             client_submission_date: "2026-07-08"
+ *             refrence_docs_attached:
+ *               - file_name: ""
+ *                 file_url: ""
+ *             project_id: 1
+ *             mir_submited: true
+ *             control_form: ""
+ *             revision: ""
+ *             location: ""
+ *             material_to_inspect: ""
+ *             storage_location: ""
+ *             attachments: ""
+ *             notes:
+ *               manufacturer: ""
+ *               purchase_order_no: ""
+ *               manufacturer_date: ""
+ *               challan_invoice_no: ""
+ *               expiry_date: ""
+ *               delivery_date: ""
+ *               batch_no: ""
+ *               material_submittal_ref: ""
+ *               source_country: ""
+ *               specification_ref: ""
+ *               quantity_delivered: ""
+ *               drawings_ref: ""
+ *             material_rows:
+ *               - material: ""
+ *                 size: ""
+ *                 quantity: ""
+ *                 unit: ""
+ *             mir_raised_by_name: ""
+ *             mir_raised_by_date_signature: ""
+ *             received_by_name: ""
+ *             received_by_date_signature: ""
+ *             inspection_engineer_comments: ""
+ *             approval_code: ""
+ *             checked_by_client_representative: ""
+ *             checked_by_date_signature: ""
+ *             issued_by_name: ""
+ *             issued_by_date_signature: ""
+ *             close_out:
+ *               action_taken: ""
+ *               checked_by: ""
+ *               status: ""
+ *               date_signature: ""
+ *             items:
+ *               - srno: 1
+ *                 hsn: ""
+ *                 item_code: ""
+ *                 description: ""
+ *                 name: ""
+ *                 qty: 0
+ *                 uom: ""
+ *                 rate: 0
+ *                 amount: 0
+ *                 remark: ""
+ *                 inspected: false
+ *                 include_in_mir: true
+ *     responses:
+ *       201:
+ *         description: Hiranandani MIR created
+ *       400:
+ *         description: Insufficient stock or bad data
+ */
+router.post("/hiranandani", async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const {
+      project_name, project_code, client_name, pmc, contractor, vendor_code,
+      po_id, challan_no, mir_refrence_no, material_code,
+      inspection_date_time, client_submission_date, refrence_docs_attached,
+      project_id, mir_submited, items,
+    } = req.body;
+
+    const mirItems        = items || [];
+    const hiranandaniData = mergeTemplateData({}, req.body, HIRANANDANI_KEYS);
+
+    const result = await client.query(
+      `INSERT INTO mirs (
+         project_name, project_code, client_name, pmc, contractor, vendor_code,
+         po_id, challan_no, mir_refrence_no, material_code,
+         inspection_date_time, client_submission_date, refrence_docs_attached,
+         project_id, template_type, mir_submited, hiranandani_data, items
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'hiranandani',$15,$16,$17)
+       RETURNING *`,
+      [
+        project_name, project_code, client_name, pmc, contractor, vendor_code,
+        po_id || null, challan_no, mir_refrence_no, material_code,
+        inspection_date_time, client_submission_date,
+        JSON.stringify(refrence_docs_attached || []),
+        project_id, mir_submited ?? false,
+        JSON.stringify(hiranandaniData),
+        JSON.stringify(mirItems),
+      ]
+    );
+
+    const mir = result.rows[0];
+
+    await processMirInventory(client, {
+      items:             mirItems,
+      mir_id:            mir.mir_id,
+      mir_ref:           mir_refrence_no || `MIR #${mir.mir_id}`,
+      project_id,
+      project_name,
+      performed_by:      req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+    });
+
+    if (mirItems.some(i => i.inventory_issued)) {
+      await client.query("UPDATE mirs SET items=$1 WHERE mir_id=$2", [JSON.stringify(mirItems), mir.mir_id]);
+      mir.items = mirItems;
+    }
+
+    await client.query("COMMIT");
+    res.status(201).json(flattenMir(mir));
+
+    logActivity({
+      action: "created", entity_type: "mir",
+      entity_id: mir.mir_id,
+      entity_name: mir_refrence_no || `MIR #${mir.mir_id}`,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: mir.project_id,
+      meta: { mir_refrence_no, template_type: "hiranandani" },
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Error creating Hiranandani MIR:", error.message);
+    if (error.code === "23503")
+      return res.status(400).json({ error: "Invalid project_id: Project does not exist" });
+    res.status(400).json({ error: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/mir
 // ─────────────────────────────────────────────────────────────────────────────
 /**
@@ -255,6 +898,11 @@ router.post("/", async (req, res) => {
  * /api/mir:
  *   get:
  *     summary: Get all MIRs
+ *     description: |
+ *       Lodha rows have their lodha_data blob flattened back to top-level keys
+ *       (request_submission, contractor_part, lodha_pmc, template_ref, ...).
+ *       Hiranandani rows have their hiranandani_data blob flattened the same way
+ *       (control_form, notes, material_rows, close_out, ...).
  *     tags: [MIR]
  *     responses:
  *       200:
@@ -262,7 +910,8 @@ router.post("/", async (req, res) => {
  */
 router.get("/", async (req, res) => {
   try {
-    res.json((await pool.query("SELECT * FROM mirs ORDER BY created_at DESC")).rows);
+    const r = await pool.query("SELECT * FROM mirs ORDER BY created_at DESC");
+    res.json(r.rows.map(flattenMir));
   } catch (e) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -276,6 +925,7 @@ router.get("/", async (req, res) => {
  * /api/mir/project/{projectId}:
  *   get:
  *     summary: Get all MIRs for a specific project
+ *     description: Same flattening as GET /api/mir — template-specific fields appear at the top level based on template_type.
  *     tags: [MIR]
  *     parameters:
  *       - in: path
@@ -292,7 +942,7 @@ router.get("/project/:projectId", async (req, res) => {
       "SELECT * FROM mirs WHERE project_id=$1 ORDER BY created_at DESC",
       [req.params.projectId]
     );
-    res.json(r.rows);
+    res.json(r.rows.map(flattenMir));
   } catch (e) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -306,6 +956,7 @@ router.get("/project/:projectId", async (req, res) => {
  * /api/mir/{id}:
  *   get:
  *     summary: Get a single MIR by ID
+ *     description: Response is flattened back to the original template request-body shape (see POST /api/mir/lodha or POST /api/mir/hiranandani), based on this MIR's template_type.
  *     tags: [MIR]
  *     parameters:
  *       - in: path
@@ -322,7 +973,7 @@ router.get("/:id", async (req, res) => {
   try {
     const r = await pool.query("SELECT * FROM mirs WHERE mir_id=$1", [req.params.id]);
     if (r.rows.length === 0) return res.status(404).json({ error: "MIR not found" });
-    res.json(r.rows[0]);
+    res.json(flattenMir(r.rows[0]));
   } catch (e) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -389,7 +1040,7 @@ router.put("/:id", async (req, res) => {
     if (material_code !== undefined)        { updateFields.push(`material_code=$${counter++}`);        values.push(material_code); }
     if (inspection_date_time !== undefined) { updateFields.push(`inspection_date_time=$${counter++}`); values.push(inspection_date_time); }
     if (client_submission_date !== undefined){ updateFields.push(`client_submission_date=$${counter++}`); values.push(client_submission_date); }
-    if (refrence_docs_attached !== undefined){ updateFields.push(`refrence_docs_attached=$${counter++}`); values.push(refrence_docs_attached); }
+    if (refrence_docs_attached !== undefined){ updateFields.push(`refrence_docs_attached=$${counter++}`); values.push(JSON.stringify(refrence_docs_attached)); }
     if (mir_submited !== undefined)         { updateFields.push(`mir_submited=$${counter++}`);         values.push(mir_submited); }
     if (dynamic_field !== undefined)        { updateFields.push(`dynamic_field=$${counter++}`);        values.push(JSON.stringify(dynamic_field)); }
     if (project_id !== undefined)           { updateFields.push(`project_id=$${counter++}`);           values.push(project_id); }
@@ -426,7 +1077,7 @@ router.put("/:id", async (req, res) => {
     );
 
     await client.query("COMMIT");
-    res.json(result.rows[0]);
+    res.json(flattenMir(result.rows[0]));
 
     logActivity({
       action: "updated", entity_type: "mir",
@@ -440,6 +1091,263 @@ router.put("/:id", async (req, res) => {
   } catch (error) {
     await client.query("ROLLBACK");
     console.error("Error updating MIR:", error.message);
+    res.status(400).json({ error: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /api/mir/lodha/:id  — edit a Lodha-template MIR
+// Only fields present in the body are changed (partial update); lodha_data
+// sub-fields (request_submission, contractor_part, lodha_pmc, template_ref,
+// template_revision, template_date) are merged onto what's already stored.
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/mir/lodha/{id}:
+ *   put:
+ *     summary: Update a Lodha-template MIR (partial update)
+ *     tags: [MIR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             description: Same shape as POST /api/mir/lodha — send only the fields you want to change.
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Updated Lodha MIR
+ *       400:
+ *         description: This MIR is not a Lodha template, or no fields to update
+ *       404:
+ *         description: MIR not found
+ */
+router.put("/lodha/:id", async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const { id } = req.params;
+    const {
+      project_name, project_code, client_name, pmc, contractor, vendor_code,
+      po_id, challan_no, mir_refrence_no, material_code,
+      inspection_date_time, client_submission_date,
+      refrence_docs_attached, mir_submited, project_id, items,
+    } = req.body;
+
+    const existing = await client.query("SELECT * FROM mirs WHERE mir_id=$1", [id]);
+    if (existing.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "MIR not found" });
+    }
+    const prevMir = existing.rows[0];
+    if (prevMir.template_type && prevMir.template_type !== "lodha") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: `This MIR is a "${prevMir.template_type}" template — use PUT /api/mir/${prevMir.template_type}/:id` });
+    }
+    const prevItems = Array.isArray(prevMir.items) ? prevMir.items : [];
+
+    const updateFields = [];
+    const values = [];
+    let counter = 1;
+
+    if (project_name !== undefined)          { updateFields.push(`project_name=$${counter++}`);          values.push(project_name); }
+    if (project_code !== undefined)          { updateFields.push(`project_code=$${counter++}`);          values.push(project_code); }
+    if (client_name !== undefined)           { updateFields.push(`client_name=$${counter++}`);           values.push(client_name); }
+    if (pmc !== undefined)                   { updateFields.push(`pmc=$${counter++}`);                   values.push(pmc); }
+    if (contractor !== undefined)            { updateFields.push(`contractor=$${counter++}`);            values.push(contractor); }
+    if (vendor_code !== undefined)           { updateFields.push(`vendor_code=$${counter++}`);           values.push(vendor_code); }
+    if (po_id !== undefined)                 { updateFields.push(`po_id=$${counter++}`);                 values.push(po_id); }
+    if (challan_no !== undefined)            { updateFields.push(`challan_no=$${counter++}`);            values.push(challan_no); }
+    if (mir_refrence_no !== undefined)       { updateFields.push(`mir_refrence_no=$${counter++}`);       values.push(mir_refrence_no); }
+    if (material_code !== undefined)         { updateFields.push(`material_code=$${counter++}`);         values.push(material_code); }
+    if (inspection_date_time !== undefined)  { updateFields.push(`inspection_date_time=$${counter++}`);  values.push(inspection_date_time); }
+    if (client_submission_date !== undefined){ updateFields.push(`client_submission_date=$${counter++}`); values.push(client_submission_date); }
+    if (refrence_docs_attached !== undefined){ updateFields.push(`refrence_docs_attached=$${counter++}`); values.push(JSON.stringify(refrence_docs_attached)); }
+    if (mir_submited !== undefined)          { updateFields.push(`mir_submited=$${counter++}`);          values.push(mir_submited); }
+    if (project_id !== undefined)            { updateFields.push(`project_id=$${counter++}`);            values.push(project_id); }
+
+    updateFields.push(`template_type=$${counter++}`);
+    values.push("lodha");
+
+    const mergedLodhaData = mergeTemplateData(prevMir.lodha_data, req.body, LODHA_KEYS);
+    updateFields.push(`lodha_data=$${counter++}`);
+    values.push(JSON.stringify(mergedLodhaData));
+
+    const newItems = items !== undefined ? [...items] : null;
+    if (newItems) {
+      await processMirInventory(client, {
+        items:             newItems,
+        previous_items:    prevItems,
+        mir_id:            Number(id),
+        mir_ref:           mir_refrence_no || prevMir.mir_refrence_no || `MIR #${id}`,
+        project_id:        project_id || prevMir.project_id,
+        project_name:      project_name || prevMir.project_name || null,
+        performed_by:      req.body.user_id || null,
+        performed_by_name: req.body.user_name || null,
+      });
+      updateFields.push(`items=$${counter++}`);
+      values.push(JSON.stringify(newItems));
+    }
+
+    updateFields.push("updated_at=CURRENT_TIMESTAMP");
+
+    values.push(id);
+    const result = await client.query(
+      `UPDATE mirs SET ${updateFields.join(",")} WHERE mir_id=$${counter} RETURNING *`,
+      values
+    );
+
+    await client.query("COMMIT");
+    res.json(flattenMir(result.rows[0]));
+
+    logActivity({
+      action: "updated", entity_type: "mir",
+      entity_id: id,
+      entity_name: result.rows[0].mir_refrence_no || `MIR #${id}`,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: result.rows[0].project_id,
+      meta: { updates: req.body, template_type: "lodha" },
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Error updating Lodha MIR:", error.message);
+    res.status(400).json({ error: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /api/mir/hiranandani/:id  — edit a Hiranandani-template MIR
+// Only fields present in the body are changed (partial update); hiranandani_data
+// sub-fields are merged onto what's already stored.
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/mir/hiranandani/{id}:
+ *   put:
+ *     summary: Update a Hiranandani-template MIR (partial update)
+ *     tags: [MIR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             description: Same shape as POST /api/mir/hiranandani — send only the fields you want to change.
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Updated Hiranandani MIR
+ *       400:
+ *         description: This MIR is not a Hiranandani template, or no fields to update
+ *       404:
+ *         description: MIR not found
+ */
+router.put("/hiranandani/:id", async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const { id } = req.params;
+    const {
+      project_name, project_code, client_name, pmc, contractor, vendor_code,
+      po_id, challan_no, mir_refrence_no, material_code,
+      inspection_date_time, client_submission_date,
+      refrence_docs_attached, mir_submited, project_id, items,
+    } = req.body;
+
+    const existing = await client.query("SELECT * FROM mirs WHERE mir_id=$1", [id]);
+    if (existing.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "MIR not found" });
+    }
+    const prevMir = existing.rows[0];
+    if (prevMir.template_type && prevMir.template_type !== "hiranandani") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: `This MIR is a "${prevMir.template_type}" template — use PUT /api/mir/${prevMir.template_type}/:id` });
+    }
+    const prevItems = Array.isArray(prevMir.items) ? prevMir.items : [];
+
+    const updateFields = [];
+    const values = [];
+    let counter = 1;
+
+    if (project_name !== undefined)          { updateFields.push(`project_name=$${counter++}`);          values.push(project_name); }
+    if (project_code !== undefined)          { updateFields.push(`project_code=$${counter++}`);          values.push(project_code); }
+    if (client_name !== undefined)           { updateFields.push(`client_name=$${counter++}`);           values.push(client_name); }
+    if (pmc !== undefined)                   { updateFields.push(`pmc=$${counter++}`);                   values.push(pmc); }
+    if (contractor !== undefined)            { updateFields.push(`contractor=$${counter++}`);            values.push(contractor); }
+    if (vendor_code !== undefined)           { updateFields.push(`vendor_code=$${counter++}`);           values.push(vendor_code); }
+    if (po_id !== undefined)                 { updateFields.push(`po_id=$${counter++}`);                 values.push(po_id); }
+    if (challan_no !== undefined)            { updateFields.push(`challan_no=$${counter++}`);            values.push(challan_no); }
+    if (mir_refrence_no !== undefined)       { updateFields.push(`mir_refrence_no=$${counter++}`);       values.push(mir_refrence_no); }
+    if (material_code !== undefined)         { updateFields.push(`material_code=$${counter++}`);         values.push(material_code); }
+    if (inspection_date_time !== undefined)  { updateFields.push(`inspection_date_time=$${counter++}`);  values.push(inspection_date_time); }
+    if (client_submission_date !== undefined){ updateFields.push(`client_submission_date=$${counter++}`); values.push(client_submission_date); }
+    if (refrence_docs_attached !== undefined){ updateFields.push(`refrence_docs_attached=$${counter++}`); values.push(JSON.stringify(refrence_docs_attached)); }
+    if (mir_submited !== undefined)          { updateFields.push(`mir_submited=$${counter++}`);          values.push(mir_submited); }
+    if (project_id !== undefined)            { updateFields.push(`project_id=$${counter++}`);            values.push(project_id); }
+
+    updateFields.push(`template_type=$${counter++}`);
+    values.push("hiranandani");
+
+    const mergedHiranandaniData = mergeTemplateData(prevMir.hiranandani_data, req.body, HIRANANDANI_KEYS);
+    updateFields.push(`hiranandani_data=$${counter++}`);
+    values.push(JSON.stringify(mergedHiranandaniData));
+
+    const newItems = items !== undefined ? [...items] : null;
+    if (newItems) {
+      await processMirInventory(client, {
+        items:             newItems,
+        previous_items:    prevItems,
+        mir_id:            Number(id),
+        mir_ref:           mir_refrence_no || prevMir.mir_refrence_no || `MIR #${id}`,
+        project_id:        project_id || prevMir.project_id,
+        project_name:      project_name || prevMir.project_name || null,
+        performed_by:      req.body.user_id || null,
+        performed_by_name: req.body.user_name || null,
+      });
+      updateFields.push(`items=$${counter++}`);
+      values.push(JSON.stringify(newItems));
+    }
+
+    updateFields.push("updated_at=CURRENT_TIMESTAMP");
+
+    values.push(id);
+    const result = await client.query(
+      `UPDATE mirs SET ${updateFields.join(",")} WHERE mir_id=$${counter} RETURNING *`,
+      values
+    );
+
+    await client.query("COMMIT");
+    res.json(flattenMir(result.rows[0]));
+
+    logActivity({
+      action: "updated", entity_type: "mir",
+      entity_id: id,
+      entity_name: result.rows[0].mir_refrence_no || `MIR #${id}`,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id: result.rows[0].project_id,
+      meta: { updates: req.body, template_type: "hiranandani" },
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Error updating Hiranandani MIR:", error.message);
     res.status(400).json({ error: error.message });
   } finally {
     client.release();
