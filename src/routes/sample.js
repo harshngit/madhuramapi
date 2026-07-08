@@ -6,7 +6,7 @@ const path = require("path");
 const fs = require("fs");
 const { logActivity } = require("./dashboard");
 const { recordMovement } = require("./inventory"); // stock-out AND stock-in helper
-const { getBoqUsageCounts } = require("../utils/boqUsage");
+const { getBoqUsageCounts, getBoqUsageDetails } = require("../utils/boqUsage");
 
 const uploadDir = path.join(__dirname, "../../uploads/sample");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -171,8 +171,15 @@ async function restoreBoqItems(client, items) {
 // every read (GET) endpoint and by the create/update responses, so the
 // frontend (incl. anything that builds a download/export from this data)
 // always sees the current item_code for a BOQ-linked item.
+//
+// Pass { full: true } (used only by GET /api/sample/:id) to also attach the
+// FULL cross-entity usage breakdown per item (used_in_pr/po/itr/dc/samples +
+// counts) — the same data GET /api/boq/:id returns, but scoped to exactly the
+// BOQ item(s) referenced in this one sample. List endpoints keep the cheaper
+// total-count-only shape (boq_total_usage_count) to avoid N detail queries
+// across a whole list of samples.
 // ─────────────────────────────────────────────────────────────────────────────
-async function enrichWithBoqInfo(samples) {
+async function enrichWithBoqInfo(samples, { full = false } = {}) {
   const list = Array.isArray(samples) ? samples : [samples];
 
   const boqIds = new Set();
@@ -183,6 +190,7 @@ async function enrichWithBoqInfo(samples) {
 
   let boqMap = new Map();
   let usageCounts = {};
+  let usageDetails = new Map();
   if (boqIds.size > 0) {
     const [boqRes, counts] = await Promise.all([
       pool.query(
@@ -194,6 +202,13 @@ async function enrichWithBoqInfo(samples) {
     ]);
     boqMap = new Map(boqRes.rows.map(b => [b.boq_id, b]));
     usageCounts = counts;
+
+    if (full) {
+      const entries = await Promise.all(
+        [...boqIds].map(async id => [id, await getBoqUsageDetails(id)])
+      );
+      usageDetails = new Map(entries);
+    }
   }
 
   const enriched = list.map(s => {
@@ -202,7 +217,7 @@ async function enrichWithBoqInfo(samples) {
       if (!i.boq_id) return i;
       const boq = boqMap.get(Number(i.boq_id));
       if (!boq) return i;
-      return {
+      const base = {
         ...i,
         boq_item_code: boq.item_code,
         boq_description: boq.description,
@@ -210,6 +225,8 @@ async function enrichWithBoqInfo(samples) {
         // Total times this BOQ item has been referenced system-wide (PR + PO + ITR + DC + samples)
         boq_total_usage_count: usageCounts[Number(i.boq_id)]?.total ?? 0,
       };
+      if (full) base.boq_usage = usageDetails.get(Number(i.boq_id));
+      return base;
     });
     return { ...s, item_description: enrichedItems };
   });
@@ -571,10 +588,14 @@ router.get("/project/:projectId", async (req, res) => {
  * @swagger
  * /api/sample/{id}:
  *   get:
- *     summary: Get a single sample by ID
+ *     summary: Get a single sample by ID (includes full BOQ usage breakdown per item)
  *     description: |
  *       Each item in `item_description` that carries a `boq_id` is enriched (live, not stored)
- *       with `boq_item_code`, `boq_description`, and `boq_remaining_quantity` from the linked BOQ item.
+ *       with `boq_item_code`, `boq_description`, and `boq_remaining_quantity` from the linked BOQ item,
+ *       plus a full `boq_usage` breakdown — every PR, PO, ITR, DC, and other Sample that has also
+ *       referenced that same BOQ item (the same cross-reference `GET /api/boq/:id` returns, scoped
+ *       to just the BOQ item(s) used in this sample). This is the one call for "open this sample,
+ *       see each BOQ item's total usage everywhere."
  *     tags: [Sample]
  *     parameters:
  *       - in: path
@@ -602,6 +623,25 @@ router.get("/project/:projectId", async (req, res) => {
  *                       boq_item_code:          { type: string, example: "ITM-007", description: "Looked up live from the linked BOQ item" }
  *                       boq_description:        { type: string }
  *                       boq_remaining_quantity: { type: number }
+ *                       boq_total_usage_count:  { type: integer, example: 5, description: "Total references across PR+PO+ITR+DC+Samples" }
+ *                       boq_usage:
+ *                         type: object
+ *                         description: Full cross-reference for this BOQ item (same shape as GET /api/boq/:id)
+ *                         properties:
+ *                           used_in_samples: { type: array, items: { type: object } }
+ *                           used_in_pr:      { type: array, items: { type: object } }
+ *                           used_in_po:      { type: array, items: { type: object } }
+ *                           used_in_itr:     { type: array, items: { type: object } }
+ *                           used_in_dc:      { type: array, items: { type: object } }
+ *                           usage_counts:
+ *                             type: object
+ *                             properties:
+ *                               samples: { type: integer }
+ *                               pr:      { type: integer }
+ *                               po:      { type: integer }
+ *                               itr:     { type: integer }
+ *                               dc:      { type: integer }
+ *                               total:   { type: integer }
  *       404:
  *         description: Sample not found
  */
@@ -613,7 +653,7 @@ router.get("/:id", async (req, res) => {
     );
     if (result.rows.length === 0)
       return res.status(404).json({ error: "Sample not found" });
-    res.json(await enrichWithBoqInfo(result.rows[0]));
+    res.json(await enrichWithBoqInfo(result.rows[0], { full: true }));
   } catch (error) {
     console.error("Error fetching sample:", error);
     res.status(500).json({ error: "Internal Server Error" });
