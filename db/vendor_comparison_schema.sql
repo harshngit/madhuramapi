@@ -24,5 +24,14 @@ BEGIN
     END IF;
 END $$;
 
+-- Migration: Add approved_vendor column if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_comparisons' AND column_name = 'approved_vendor') THEN
+        ALTER TABLE vendor_comparisons ADD COLUMN approved_vendor INTEGER REFERENCES vendors(vendor_id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_vc_project_id ON vendor_comparisons(project_id);
 CREATE INDEX IF NOT EXISTS idx_vc_pr_no ON vendor_comparisons(pr_no);
+CREATE INDEX IF NOT EXISTS idx_vc_approved_vendor ON vendor_comparisons(approved_vendor);

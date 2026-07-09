@@ -40,6 +40,9 @@ const upload = multer({ storage });
  *           type: integer
  *         pr_no:
  *           type: integer
+ *         approved_vendor:
+ *           type: integer
+ *           description: Link to the chosen vendor from the pricelist (vendors.vendor_id)
  *         pricelist:
  *           type: array
  *           items:
@@ -138,6 +141,9 @@ router.post("/upload", upload.array("files"), (req, res) => {
  *             properties:
  *               project_id: { type: integer }
  *               pr_no: { type: integer }
+ *               approved_vendor:
+ *                 type: integer
+ *                 description: Link to the chosen vendor from the pricelist (vendors.vendor_id)
  *               pricelist:
  *                 type: array
  *                 items:
@@ -162,15 +168,16 @@ router.post("/upload", upload.array("files"), (req, res) => {
  */
 router.post("/", async (req, res) => {
   try {
-    const { project_id, pr_no, pricelist, upload_document, user_id, user_name } = req.body;
+    const { project_id, pr_no, approved_vendor, pricelist, upload_document, user_id, user_name } = req.body;
 
     const result = await pool.query(
-      `INSERT INTO vendor_comparisons (project_id, pr_no, pricelist, upload_document)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO vendor_comparisons (project_id, pr_no, approved_vendor, pricelist, upload_document)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
       [
         project_id,
         pr_no,
+        approved_vendor || null,
         JSON.stringify(pricelist || []),
         JSON.stringify(upload_document || [])
       ]
@@ -223,9 +230,10 @@ router.get("/", async (req, res) => {
   try {
     const { project_id, pr_no, pr_name } = req.query;
     let query = `
-      SELECT vc.*, pr.project_name as pr_name
+      SELECT vc.*, pr.project_name as pr_name, v.vendor_name as approved_vendor_name
       FROM vendor_comparisons vc
       LEFT JOIN purchase_requisitions pr ON vc.pr_no = pr.pr_id
+      LEFT JOIN vendors v ON vc.approved_vendor = v.vendor_id
     `;
     let conditions = [];
     let params = [];
@@ -279,7 +287,11 @@ router.get("/", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT * FROM vendor_comparisons WHERE comparison_id = $1",
+      `SELECT vc.*, pr.project_name as pr_name, v.vendor_name as approved_vendor_name
+         FROM vendor_comparisons vc
+         LEFT JOIN purchase_requisitions pr ON vc.pr_no = pr.pr_id
+         LEFT JOIN vendors v ON vc.approved_vendor = v.vendor_id
+        WHERE vc.comparison_id = $1`,
       [req.params.id]
     );
     if (result.rows.length === 0)
@@ -305,6 +317,18 @@ router.get("/:id", async (req, res) => {
  *         name: id
  *         required: true
  *         schema: { type: integer }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               pr_no: { type: integer }
+ *               approved_vendor:
+ *                 type: integer
+ *                 description: Link to the chosen vendor from the pricelist (vendors.vendor_id)
+ *               pricelist: { type: array, items: { type: object } }
+ *               upload_document: { type: array, items: { type: object } }
  *     responses:
  *       200:
  *         description: Updated
@@ -314,18 +338,20 @@ router.get("/:id", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { pr_no, pricelist, upload_document, user_id, user_name } = req.body;
+    const { pr_no, approved_vendor, pricelist, upload_document, user_id, user_name } = req.body;
 
     const result = await pool.query(
       `UPDATE vendor_comparisons SET
          pr_no = COALESCE($1, pr_no),
-         pricelist = COALESCE($2, pricelist),
-         upload_document = COALESCE($3, upload_document),
+         approved_vendor = COALESCE($2, approved_vendor),
+         pricelist = COALESCE($3, pricelist),
+         upload_document = COALESCE($4, upload_document),
          updated_at = CURRENT_TIMESTAMP
-       WHERE comparison_id = $4
+       WHERE comparison_id = $5
        RETURNING *`,
       [
         pr_no || null,
+        approved_vendor || null,
         pricelist ? JSON.stringify(pricelist) : null,
         upload_document ? JSON.stringify(upload_document) : null,
         id
@@ -378,7 +404,7 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { user_id, user_name } = req.body;
+    const { user_id, user_name } = req.body || {};
 
     const result = await pool.query(
       "DELETE FROM vendor_comparisons WHERE comparison_id = $1 RETURNING *",
