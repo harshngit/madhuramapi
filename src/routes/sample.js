@@ -567,10 +567,15 @@ router.get("/", async (req, res) => {
  *         description: Server error
  */
 router.get("/project/:projectId", async (req, res) => {
+  const projectId = Number(req.params.projectId);
+  if (!Number.isInteger(projectId)) {
+    return res.status(400).json({ error: "projectId must be a valid integer" });
+  }
+
   try {
     const result = await pool.query(
       "SELECT * FROM samples WHERE project_id = $1 ORDER BY created_at DESC",
-      [req.params.projectId]
+      [projectId]
     );
     const samples = result.rows.map(s => {
       const items = Array.isArray(s.item_description) ? s.item_description : [];
