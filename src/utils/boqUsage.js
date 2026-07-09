@@ -1,7 +1,7 @@
 const { pool } = require("../db");
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Cross-entity BOQ usage lookups. Informational only — none of PR/PO/ITR/DC
+// Cross-entity BOQ usage lookups. Informational only — none of PR/PO/ITR/DC/MIR
 // deduct from boqs.used_quantity; only samples does (see src/routes/sample.js).
 //
 // Linkage shape per entity:
@@ -10,20 +10,21 @@ const { pool } = require("../db");
 //   pos                     : items[]                   item.boq_id, item.boq_qty
 //   itrs                    : work_items[]               item.boq_id, item.boq_qty
 //   delivery_challans       : items[]                   item.boq_id, item.boq_qty
+//   mirs                    : items[]                   item.boq_id, item.boq_qty
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Batched counts for many boq_ids at once — used to annotate a list of items
 // (e.g. a sample's item_description) with each item's total system-wide usage.
-// Returns { [boq_id]: { samples, pr, po, itr, dc, total } }
+// Returns { [boq_id]: { samples, pr, po, itr, dc, mir, total } }
 async function getBoqUsageCounts(boqIds) {
   const ids = [...new Set((boqIds || []).map(Number).filter(Boolean))];
   const out = {};
-  for (const id of ids) out[id] = { samples: 0, pr: 0, po: 0, itr: 0, dc: 0, total: 0 };
+  for (const id of ids) out[id] = { samples: 0, pr: 0, po: 0, itr: 0, dc: 0, mir: 0, total: 0 };
   if (ids.length === 0) return out;
 
   const idsText = ids.map(String);
 
-  const [samplesRes, prRes, poRes, itrRes, dcRes] = await Promise.all([
+  const [samplesRes, prRes, poRes, itrRes, dcRes, mirRes] = await Promise.all([
     pool.query(
       `SELECT elem->>'boq_id' AS boq_id, COUNT(*) AS cnt
          FROM samples, jsonb_array_elements(item_description) elem
@@ -59,6 +60,13 @@ async function getBoqUsageCounts(boqIds) {
         GROUP BY 1`,
       [idsText]
     ),
+    pool.query(
+      `SELECT elem->>'boq_id' AS boq_id, COUNT(*) AS cnt
+         FROM mirs, jsonb_array_elements(items) elem
+        WHERE elem->>'boq_id' = ANY($1::text[])
+        GROUP BY 1`,
+      [idsText]
+    ),
   ]);
 
   const apply = (rows, key) => rows.forEach(r => {
@@ -69,10 +77,11 @@ async function getBoqUsageCounts(boqIds) {
   apply(poRes.rows, "po");
   apply(itrRes.rows, "itr");
   apply(dcRes.rows, "dc");
+  apply(mirRes.rows, "mir");
 
   for (const id of ids) {
     const u = out[id];
-    u.total = u.samples + u.pr + u.po + u.itr + u.dc;
+    u.total = u.samples + u.pr + u.po + u.itr + u.dc + u.mir;
   }
   return out;
 }
@@ -80,7 +89,7 @@ async function getBoqUsageCounts(boqIds) {
 // Full detail lists for ONE boq_id — used by GET /api/boq/:id.
 async function getBoqUsageDetails(boqId) {
   const boqIdText = String(boqId);
-  const [samplesRes, prRes, poRes, itrRes, dcRes] = await Promise.all([
+  const [samplesRes, prRes, poRes, itrRes, dcRes, mirRes] = await Promise.all([
     pool.query(
       `SELECT s.sample_id, s.building_name, s.site_name, s.project_id,
               NULLIF(elem->>'boq_issued_qty', '')::numeric AS qty
@@ -116,6 +125,13 @@ async function getBoqUsageDetails(boqId) {
         WHERE elem->>'boq_id' = $1`,
       [boqIdText]
     ),
+    pool.query(
+      `SELECT m.mir_id, m.mir_refrence_no, m.project_id,
+              NULLIF(elem->>'boq_qty', '')::numeric AS qty
+         FROM mirs m, jsonb_array_elements(m.items) elem
+        WHERE elem->>'boq_id' = $1`,
+      [boqIdText]
+    ),
   ]);
 
   return {
@@ -124,13 +140,15 @@ async function getBoqUsageDetails(boqId) {
     used_in_po:       poRes.rows,
     used_in_itr:      itrRes.rows,
     used_in_dc:       dcRes.rows,
+    used_in_mir:      mirRes.rows,
     usage_counts: {
       samples: samplesRes.rowCount,
       pr:      prRes.rowCount,
       po:      poRes.rowCount,
       itr:     itrRes.rowCount,
       dc:      dcRes.rowCount,
-      total:   samplesRes.rowCount + prRes.rowCount + poRes.rowCount + itrRes.rowCount + dcRes.rowCount,
+      mir:     mirRes.rowCount,
+      total:   samplesRes.rowCount + prRes.rowCount + poRes.rowCount + itrRes.rowCount + dcRes.rowCount + mirRes.rowCount,
     },
   };
 }

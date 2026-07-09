@@ -273,6 +273,8 @@ router.post("/upload-reference-doc", uploadReferenceDoc.single("file"), (req, re
  *                     remark:       { type: string }
  *                     inventory_id: { type: integer, description: "Link to inventories item" }
  *                     issued_qty:   { type: number,  description: "Qty to deduct (default: qty)" }
+ *                     boq_id:       { type: integer, description: "Link to a BOQ item (boqs.boq_id) — informational only, does not deduct BOQ quantity" }
+ *                     boq_qty:      { type: number,  description: "Qty being recorded against that BOQ item" }
  *     responses:
  *       201:
  *         description: MIR created; linked inventory items deducted
@@ -476,6 +478,8 @@ router.post("/", async (req, res) => {
  *                     include_in_mir: { type: boolean }
  *                     inventory_id:   { type: integer, description: "Link to inventories item" }
  *                     issued_qty:     { type: number,  description: "Qty to deduct (default: qty)" }
+ *                     boq_id:         { type: integer, description: "Link to a BOQ item (boqs.boq_id) — informational only, does not deduct BOQ quantity" }
+ *                     boq_qty:        { type: number,  description: "Qty being recorded against that BOQ item" }
  *           example:
  *             project_name: ""
  *             project_code: ""
@@ -556,6 +560,8 @@ router.post("/", async (req, res) => {
  *                 remark: ""
  *                 inspected: false
  *                 include_in_mir: true
+ *                 boq_id: 0
+ *                 boq_qty: 0
  *     responses:
  *       201:
  *         description: Lodha MIR created
@@ -740,6 +746,8 @@ router.post("/lodha", async (req, res) => {
  *                     include_in_mir: { type: boolean }
  *                     inventory_id:   { type: integer, description: "Link to inventories item" }
  *                     issued_qty:     { type: number,  description: "Qty to deduct (default: qty)" }
+ *                     boq_id:         { type: integer, description: "Link to a BOQ item (boqs.boq_id) — informational only, does not deduct BOQ quantity" }
+ *                     boq_qty:        { type: number,  description: "Qty being recorded against that BOQ item" }
  *           example:
  *             project_name: ""
  *             project_code: ""
@@ -810,6 +818,8 @@ router.post("/lodha", async (req, res) => {
  *                 remark: ""
  *                 inspected: false
  *                 include_in_mir: true
+ *                 boq_id: 0
+ *                 boq_qty: 0
  *     responses:
  *       201:
  *         description: Hiranandani MIR created

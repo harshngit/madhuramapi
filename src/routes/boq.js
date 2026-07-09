@@ -1533,16 +1533,27 @@ router.get("/project/:projectId/items", async (req, res) => {
  *                           challan_number:  { type: string }
  *                           qty:             { type: number }
  *                           project_id:      { type: integer }
+ *                     used_in_mir:
+ *                       type: array
+ *                       description: MIRs (generic/Lodha/Hiranandani) that reference this BOQ item (informational)
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           mir_id:          { type: integer }
+ *                           mir_refrence_no: { type: string }
+ *                           qty:             { type: number }
+ *                           project_id:      { type: integer }
  *                     usage_counts:
  *                       type: object
- *                       description: Count of references per source, plus a grand total across all 5
+ *                       description: Count of references per source, plus a grand total across all 6
  *                       properties:
  *                         samples: { type: integer, example: 2 }
  *                         pr:      { type: integer, example: 1 }
  *                         po:      { type: integer, example: 1 }
  *                         itr:     { type: integer, example: 0 }
  *                         dc:      { type: integer, example: 3 }
- *                         total:   { type: integer, example: 7 }
+ *                         mir:     { type: integer, example: 1 }
+ *                         total:   { type: integer, example: 8 }
  *       404:
  *         description: BOQ not found
  */

@@ -173,7 +173,7 @@ async function restoreBoqItems(client, items) {
 // always sees the current item_code for a BOQ-linked item.
 //
 // Pass { full: true } (used only by GET /api/sample/:id) to also attach the
-// FULL cross-entity usage breakdown per item (used_in_pr/po/itr/dc/samples +
+// FULL cross-entity usage breakdown per item (used_in_pr/po/itr/dc/mir/samples +
 // counts) — the same data GET /api/boq/:id returns, but scoped to exactly the
 // BOQ item(s) referenced in this one sample. List endpoints keep the cheaper
 // total-count-only shape (boq_total_usage_count) to avoid N detail queries
@@ -225,7 +225,7 @@ async function enrichWithBoqInfo(samples, { full = false } = {}) {
         boq_item_code: boq.item_code,
         boq_description: boq.description,
         boq_remaining_quantity: Number(boq.quantity || 0) - Number(boq.used_quantity || 0),
-        // Total times this BOQ item has been referenced system-wide (PR + PO + ITR + DC + samples)
+        // Total times this BOQ item has been referenced system-wide (PR + PO + ITR + DC + MIR + samples)
         boq_total_usage_count: usageCounts[Number(i.boq_id)]?.total ?? 0,
       };
       if (full) base.boq_usage = usageDetails.get(Number(i.boq_id));
@@ -631,7 +631,7 @@ router.get("/project/:projectId", async (req, res) => {
  *                       boq_item_code:          { type: string, example: "ITM-007", description: "Looked up live from the linked BOQ item" }
  *                       boq_description:        { type: string }
  *                       boq_remaining_quantity: { type: number }
- *                       boq_total_usage_count:  { type: integer, example: 5, description: "Total references across PR+PO+ITR+DC+Samples" }
+ *                       boq_total_usage_count:  { type: integer, example: 5, description: "Total references across PR+PO+ITR+DC+MIR+Samples" }
  *                       boq_usage:
  *                         type: object
  *                         description: Full cross-reference for this BOQ item (same shape as GET /api/boq/:id)
@@ -641,6 +641,7 @@ router.get("/project/:projectId", async (req, res) => {
  *                           used_in_po:      { type: array, items: { type: object } }
  *                           used_in_itr:     { type: array, items: { type: object } }
  *                           used_in_dc:      { type: array, items: { type: object } }
+ *                           used_in_mir:     { type: array, items: { type: object } }
  *                           usage_counts:
  *                             type: object
  *                             properties:
@@ -649,6 +650,7 @@ router.get("/project/:projectId", async (req, res) => {
  *                               po:      { type: integer }
  *                               itr:     { type: integer }
  *                               dc:      { type: integer }
+ *                               mir:     { type: integer }
  *                               total:   { type: integer }
  *       404:
  *         description: Sample not found
