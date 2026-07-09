@@ -21,13 +21,15 @@ async function getBoqUsageCounts(boqIds) {
   for (const id of ids) out[id] = { samples: 0, pr: 0, po: 0, itr: 0, dc: 0, total: 0 };
   if (ids.length === 0) return out;
 
+  const idsText = ids.map(String);
+
   const [samplesRes, prRes, poRes, itrRes, dcRes] = await Promise.all([
     pool.query(
-      `SELECT (elem->>'boq_id')::int AS boq_id, COUNT(*) AS cnt
+      `SELECT elem->>'boq_id' AS boq_id, COUNT(*) AS cnt
          FROM samples, jsonb_array_elements(item_description) elem
-        WHERE (elem->>'boq_id')::int = ANY($1)
+        WHERE elem->>'boq_id' = ANY($1::text[])
         GROUP BY 1`,
-      [ids]
+      [idsText]
     ),
     pool.query(
       `SELECT boq_id, COUNT(*) AS cnt
@@ -37,25 +39,25 @@ async function getBoqUsageCounts(boqIds) {
       [ids]
     ),
     pool.query(
-      `SELECT (elem->>'boq_id')::int AS boq_id, COUNT(*) AS cnt
+      `SELECT elem->>'boq_id' AS boq_id, COUNT(*) AS cnt
          FROM pos, jsonb_array_elements(items) elem
-        WHERE (elem->>'boq_id')::int = ANY($1)
+        WHERE elem->>'boq_id' = ANY($1::text[])
         GROUP BY 1`,
-      [ids]
+      [idsText]
     ),
     pool.query(
-      `SELECT (elem->>'boq_id')::int AS boq_id, COUNT(*) AS cnt
+      `SELECT elem->>'boq_id' AS boq_id, COUNT(*) AS cnt
          FROM itrs, jsonb_array_elements(work_items) elem
-        WHERE (elem->>'boq_id')::int = ANY($1)
+        WHERE elem->>'boq_id' = ANY($1::text[])
         GROUP BY 1`,
-      [ids]
+      [idsText]
     ),
     pool.query(
-      `SELECT (elem->>'boq_id')::int AS boq_id, COUNT(*) AS cnt
+      `SELECT elem->>'boq_id' AS boq_id, COUNT(*) AS cnt
          FROM delivery_challans, jsonb_array_elements(items) elem
-        WHERE (elem->>'boq_id')::int = ANY($1)
+        WHERE elem->>'boq_id' = ANY($1::text[])
         GROUP BY 1`,
-      [ids]
+      [idsText]
     ),
   ]);
 
@@ -77,13 +79,14 @@ async function getBoqUsageCounts(boqIds) {
 
 // Full detail lists for ONE boq_id — used by GET /api/boq/:id.
 async function getBoqUsageDetails(boqId) {
+  const boqIdText = String(boqId);
   const [samplesRes, prRes, poRes, itrRes, dcRes] = await Promise.all([
     pool.query(
       `SELECT s.sample_id, s.building_name, s.site_name, s.project_id,
-              (elem->>'boq_issued_qty')::numeric AS qty
+              NULLIF(elem->>'boq_issued_qty', '')::numeric AS qty
          FROM samples s, jsonb_array_elements(s.item_description) elem
-        WHERE (elem->>'boq_id')::int = $1`,
-      [boqId]
+        WHERE elem->>'boq_id' = $1`,
+      [boqIdText]
     ),
     pool.query(
       `SELECT pri.pr_id, pr.pr_number, pri.material_description, pri.boq_qty AS qty, pr.project_id
@@ -94,24 +97,24 @@ async function getBoqUsageDetails(boqId) {
     ),
     pool.query(
       `SELECT p.po_id, p.order_no, p.project_id,
-              (elem->>'boq_qty')::numeric AS qty
+              NULLIF(elem->>'boq_qty', '')::numeric AS qty
          FROM pos p, jsonb_array_elements(p.items) elem
-        WHERE (elem->>'boq_id')::int = $1`,
-      [boqId]
+        WHERE elem->>'boq_id' = $1`,
+      [boqIdText]
     ),
     pool.query(
       `SELECT i.itr_id, i.itr_ref_no, i.project_id,
-              (elem->>'boq_qty')::numeric AS qty
+              NULLIF(elem->>'boq_qty', '')::numeric AS qty
          FROM itrs i, jsonb_array_elements(i.work_items) elem
-        WHERE (elem->>'boq_id')::int = $1`,
-      [boqId]
+        WHERE elem->>'boq_id' = $1`,
+      [boqIdText]
     ),
     pool.query(
       `SELECT d.dc_id, d.challan_number, d.project_id,
-              (elem->>'boq_qty')::numeric AS qty
+              NULLIF(elem->>'boq_qty', '')::numeric AS qty
          FROM delivery_challans d, jsonb_array_elements(d.items) elem
-        WHERE (elem->>'boq_id')::int = $1`,
-      [boqId]
+        WHERE elem->>'boq_id' = $1`,
+      [boqIdText]
     ),
   ]);
 
