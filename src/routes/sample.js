@@ -185,7 +185,10 @@ async function enrichWithBoqInfo(samples, { full = false } = {}) {
   const boqIds = new Set();
   list.forEach(s => {
     const items = Array.isArray(s.item_description) ? s.item_description : [];
-    items.forEach(i => { if (i.boq_id) boqIds.add(Number(i.boq_id)); });
+    items.forEach(i => {
+      const n = Number(i.boq_id);
+      if (i.boq_id && Number.isFinite(n)) boqIds.add(n);
+    });
   });
 
   let boqMap = new Map();
