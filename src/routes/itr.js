@@ -116,6 +116,10 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *               mir_id:
  *                 type: integer
  *                 example: 3
+ *               sample_id:
+ *                 type: string
+ *                 example: "SAMPLE-001"
+ *                 description: Link to a sample (samples.sample_id)
  *
  *               project_info:
  *                 type: object
@@ -269,6 +273,7 @@ router.post("/", async (req, res) => {
     project_id,
     po_id,
     mir_id,
+    sample_id,
     project_info,
     itr_header,
     location,
@@ -295,17 +300,18 @@ router.post("/", async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO itrs (
-        project_id, po_id, mir_id,
+        project_id, po_id, mir_id, sample_id,
         project_info, itr_header, location, discipline,
         quantity, description_of_work, work_items, shaft_details,
         attachments, part_a_contractor, part_b_lodha_pmc,
         status, allowed_values, itr_ref_no
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
       RETURNING *`,
       [
         project_id,
         po_id || null,
         mir_id || null,
+        sample_id || null,
         toJson(project_info),
         toJson(itr_header),
         toJson(location),
@@ -442,6 +448,7 @@ router.get("/:id", async (req, res) => {
  *             properties:
  *               po_id:               { type: integer }
  *               mir_id:              { type: integer }
+ *               sample_id:           { type: string, example: "SAMPLE-001", description: "Link to a sample (samples.sample_id)" }
  *               project_info:        { type: object }
  *               itr_header:          { type: object }
  *               location:            { type: object }
@@ -472,6 +479,7 @@ router.put("/:id", async (req, res) => {
   const {
     po_id,
     mir_id,
+    sample_id,
     project_info,
     itr_header,
     location,
@@ -498,6 +506,7 @@ router.put("/:id", async (req, res) => {
 
     if (po_id               !== undefined) push("po_id",               po_id || null);
     if (mir_id              !== undefined) push("mir_id",              mir_id || null);
+    if (sample_id           !== undefined) push("sample_id",           sample_id || null);
     if (project_info        !== undefined) push("project_info",        toJson(project_info));
     if (itr_header          !== undefined) {
       push("itr_header",  toJson(itr_header));

@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS mirs (
         status TEXT,
         allowed_values JSONB DEFAULT '{}'::jsonb,
         itr_ref_no TEXT,
+        sample_id TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -120,7 +121,8 @@ ADD COLUMN IF NOT EXISTS part_a_contractor JSONB DEFAULT '{}'::jsonb,
 ADD COLUMN IF NOT EXISTS part_b_lodha_pmc JSONB DEFAULT '{}'::jsonb,
 ADD COLUMN IF NOT EXISTS status TEXT,
 ADD COLUMN IF NOT EXISTS allowed_values JSONB DEFAULT '{}'::jsonb,
-ADD COLUMN IF NOT EXISTS itr_ref_no TEXT;
+ADD COLUMN IF NOT EXISTS itr_ref_no TEXT,
+ADD COLUMN IF NOT EXISTS sample_id TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_itrs_project_id ON itrs(project_id);
 CREATE INDEX IF NOT EXISTS idx_itrs_itr_ref_no_lower ON itrs(LOWER(itr_ref_no));
@@ -139,6 +141,21 @@ CREATE TABLE IF NOT EXISTS samples (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE constraint_name = 'itrs_sample_id_fkey'
+  ) THEN
+    ALTER TABLE itrs
+      ADD CONSTRAINT itrs_sample_id_fkey
+      FOREIGN KEY (sample_id)
+      REFERENCES samples(sample_id)
+      ON DELETE SET NULL;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_itrs_sample_id ON itrs(sample_id);
 
 CREATE TABLE IF NOT EXISTS purchase_requisitions (
     pr_id SERIAL PRIMARY KEY,
