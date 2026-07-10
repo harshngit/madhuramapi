@@ -605,7 +605,11 @@ router.put("/:id", uploadMiddleware, async (req, res) => {
  */
 router.delete("/:id", async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "id must be a valid integer" });
+    }
+
     const result = await pool.query("DELETE FROM projects WHERE project_id = $1 RETURNING *", [id]);
 
     if (result.rows.length === 0) {

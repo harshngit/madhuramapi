@@ -534,8 +534,37 @@ router.put("/:id", async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // DELETE /api/dc/:id
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/dc/{id}:
+ *   delete:
+ *     summary: Delete a Delivery Challan
+ *     tags: [DeliveryChallan]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               user_id:   { type: integer }
+ *               user_name: { type: string }
+ *     responses:
+ *       200:
+ *         description: Delivery Challan deleted successfully
+ *       404:
+ *         description: Not found
+ *       500:
+ *         description: Server error
+ */
 router.delete("/:id", async (req, res) => {
   try {
+    const { user_id, user_name } = req.body || {};
+
     const result = await pool.query(
       "DELETE FROM delivery_challans WHERE dc_id=$1 RETURNING *",
       [req.params.id]
@@ -548,7 +577,7 @@ router.delete("/:id", async (req, res) => {
     logActivity({
       action: "deleted", entity_type: "delivery_challan",
       entity_id: req.params.id, entity_name: result.rows[0].challan_number,
-      performed_by: req.body.user_id || null, performed_by_name: req.body.user_name || null,
+      performed_by: user_id || null, performed_by_name: user_name || null,
       project_id: result.rows[0].project_id, meta: {},
     });
   } catch (err) {
