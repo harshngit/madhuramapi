@@ -10,7 +10,7 @@
 -- lookup fast.
 
 ALTER TABLE purchase_requisition_items
-ADD COLUMN IF NOT EXISTS boq_id INTEGER REFERENCES boqs(boq_id);
+ADD COLUMN IF NOT EXISTS boq_id INTEGER REFERENCES boqs(boq_id) ON DELETE SET NULL;
 
 ALTER TABLE purchase_requisition_items
 ADD COLUMN IF NOT EXISTS boq_qty NUMERIC;
