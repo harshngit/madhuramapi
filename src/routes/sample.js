@@ -298,6 +298,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                   properties:
  *                     sr_no:         { type: integer, example: 1 }
  *                     item_name:     { type: string,  example: "Ceramic Tile", description: "Name of the item" }
+ *                     item_code:     { type: string,  example: "ITM-007",      description: "Item code / SKU" }
  *                     brand_name:    { type: string,  example: "Kajaria",      description: "Brand of the item" }
  *                     description:   { type: string,  example: "60x60 Glossy White" }
  *                     specification: { type: string,  example: "Grade A, ISO certified" }
@@ -325,6 +326,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *             item_description:
  *               - sr_no: 1
  *                 item_name: "Ceramic Tile"
+ *                 item_code: "ITM-007"
  *                 brand_name: "Kajaria"
  *                 description: "60x60 Glossy White"
  *                 specification: "Grade A, ISO certified"
@@ -367,6 +369,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                     properties:
  *                       sr_no:              { type: integer }
  *                       item_name:          { type: string }
+ *                       item_code:          { type: string }
  *                       brand_name:         { type: string }
  *                       description:        { type: string }
  *                       specification:      { type: string }
@@ -712,6 +715,7 @@ router.get("/:id", async (req, res) => {
  *                   properties:
  *                     sr_no:          { type: integer, example: 1 }
  *                     item_name:      { type: string,  example: "Ceramic Tile" }
+ *                     item_code:      { type: string,  example: "ITM-007" }
  *                     brand_name:     { type: string,  example: "Kajaria" }
  *                     description:    { type: string,  example: "60x60 Glossy White" }
  *                     specification:  { type: string,  example: "Grade A, ISO certified" }
@@ -733,6 +737,7 @@ router.get("/:id", async (req, res) => {
  *             item_description:
  *               - sr_no: 1
  *                 item_name: "Ceramic Tile"
+ *                 item_code: "ITM-007"
  *                 quantity: 100
  *                 boq_id: 7
  *                 boq_issued_qty: 100
