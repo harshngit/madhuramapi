@@ -198,6 +198,12 @@ router.post("/", async (req, res) => {
     res.status(201).json(vc);
   } catch (error) {
     console.error("Error creating vendor comparison:", error);
+    if (error.code === "23503" && error.constraint === "vendor_comparisons_pr_no_fkey")
+      return res.status(400).json({ error: "Invalid pr_no: no Purchase Requisition with that internal pr_id exists" });
+    if (error.code === "23503" && error.constraint === "vendor_comparisons_approved_vendor_fkey")
+      return res.status(400).json({ error: "Invalid approved_vendor: no vendor with that vendor_id exists" });
+    if (error.code === "23503")
+      return res.status(400).json({ error: "Invalid project_id: Project does not exist" });
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
@@ -377,6 +383,10 @@ router.put("/:id", async (req, res) => {
     res.json(vc);
   } catch (error) {
     console.error("Error updating vendor comparison:", error);
+    if (error.code === "23503" && error.constraint === "vendor_comparisons_pr_no_fkey")
+      return res.status(400).json({ error: "Invalid pr_no: no Purchase Requisition with that internal pr_id exists" });
+    if (error.code === "23503" && error.constraint === "vendor_comparisons_approved_vendor_fkey")
+      return res.status(400).json({ error: "Invalid approved_vendor: no vendor with that vendor_id exists" });
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
