@@ -455,7 +455,6 @@ router.post("/create-sample", async (req, res) => {
     }
 
     await client.query("COMMIT");
-    res.status(201).json(await enrichWithBoqInfo(sample));
 
     logActivity({
       action: "created", entity_type: "sample",
@@ -465,6 +464,8 @@ router.post("/create-sample", async (req, res) => {
       performed_by_name: req.body.created_by_name || null,
       meta: { project_id },
     });
+
+    res.status(201).json(await enrichWithBoqInfo(sample));
   } catch (error) {
     await client.query("ROLLBACK");
     console.error("Error creating sample:", error.message);
@@ -688,8 +689,9 @@ router.get("/:id", async (req, res) => {
  *         name: id
  *         required: true
  *         schema: { type: string }
+ *         description: The sample_id to update
  *     requestBody:
- *       required: false
+ *       required: true
  *       content:
  *         application/json:
  *           schema:
@@ -724,7 +726,7 @@ router.get("/:id", async (req, res) => {
  *                     value:          { type: number,  example: 45.50 }
  *                     inventory_id:   { type: integer, example: 12, description: "Link to inventory item for auto stock-out" }
  *                     issued_qty:     { type: number,  example: 100, description: "Qty to deduct from inventory (defaults to quantity)" }
- *                     boq_id:         { type: integer, example: 7,   description: "Link to a BOQ item (boqs.boq_id) this sample line was taken from" }
+ *                     boq_id:         { type: integer, example: 7,  description: "Link to a BOQ item (boqs.boq_id) this sample line was taken from" }
  *                     boq_issued_qty: { type: number,  example: 100, description: "Qty to consume from the BOQ item's remaining quantity (defaults to quantity)" }
  *               add_fields:       { type: array }
  *               sample_file:      { type: string }
@@ -732,22 +734,94 @@ router.get("/:id", async (req, res) => {
  *               user_id:          { type: string, description: "Who is making this update" }
  *               user_name:        { type: string }
  *           example:
+ *             sample_id: "SAMPLE-001"
+ *             project_id: 1
+ *             flats: "A-101, A-102"
  *             building_name: "Block A"
- *             work_done: "Flooring - Phase 2"
+ *             site_name: "Main Site"
+ *             location:
+ *               floor: "2nd"
+ *               flat_no: "A-101"
+ *               block: "B"
+ *               wing: "East"
+ *               coordinates: "19.0760,72.8777"
+ *             work_done: "Flooring"
  *             item_description:
  *               - sr_no: 1
  *                 item_name: "Ceramic Tile"
  *                 item_code: "ITM-007"
+ *                 brand_name: "Kajaria"
+ *                 description: "60x60 Glossy White"
+ *                 specification: "Grade A, ISO certified"
+ *                 unit: "Nos"
  *                 quantity: 100
+ *                 value: 45.50
+ *                 inventory_id: 12
+ *                 issued_qty: 100
  *                 boq_id: 7
  *                 boq_issued_qty: 100
+ *               - sr_no: 2
+ *                 item_name: "Wall Putty"
+ *                 brand_name: "Birla White"
+ *                 description: "Interior Wall Putty 40kg"
+ *                 specification: "White cement based"
+ *                 unit: "Bags"
+ *                 quantity: 20
+ *                 value: 380
+ *             add_fields: []
+ *             user_id: "123"
+ *             user_name: "John Doe"
+ *             project_name: "Madhuram Towers"
  *     responses:
  *       200:
  *         description: Sample updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sample_id:        { type: string, example: "SAMPLE-001" }
+ *                 project_id:       { type: integer, example: 1 }
+ *                 flats:            { type: string,  example: "A-101, A-102" }
+ *                 building_name:    { type: string,  example: "Block A" }
+ *                 site_name:        { type: string,  example: "Main Site" }
+ *                 location:         { type: object }
+ *                 work_done:        { type: string, example: "Flooring" }
+ *                 item_description:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       sr_no:          { type: integer }
+ *                       item_name:      { type: string }
+ *                       item_code:      { type: string }
+ *                       brand_name:     { type: string }
+ *                       description:    { type: string }
+ *                       specification:  { type: string }
+ *                       unit:           { type: string }
+ *                       quantity:       { type: number }
+ *                       value:          { type: number }
+ *                       inventory_id:   { type: integer }
+ *                       issued_qty:     { type: number }
+ *                       inventory_issued: { type: boolean }
+ *                       inventory_issued_at: { type: string, format: "date-time" }
+ *                       boq_id:         { type: integer, description: "BOQ item this line was taken from" }
+ *                       boq_issued_qty: { type: number }
+ *                       boq_issued:     { type: boolean }
+ *                       boq_issued_at:  { type: string, format: "date-time" }
+ *                       boq_item_code:  { type: string, description: "item_code of the linked BOQ item (looked up live, not stored)" }
+ *                       boq_description: { type: string, description: "description of the linked BOQ item (looked up live, not stored)" }
+ *                       boq_remaining_quantity: { type: number, description: "Remaining quantity left on the linked BOQ item after this consumption" }
+ *                 add_fields:       { type: array }
+ *                 sample_file:      { type: string }
+ *                 created_at:       { type: string, format: "date-time" }
+ *                 updated_at:       { type: string, format: "date-time" }
  *       400:
  *         description: Insufficient inventory stock or bad data (BOQ quantity is never blocked — remaining_quantity can go negative)
  *       404:
  *         description: Not found
+ *       500:
+ *         description: Server error
  */
 router.put("/:id", async (req, res) => {
   const client = await pool.connect();
@@ -817,7 +891,6 @@ router.put("/:id", async (req, res) => {
     );
 
     await client.query("COMMIT");
-    res.json(await enrichWithBoqInfo(result.rows[0]));
 
     logActivity({
       action: "updated", entity_type: "sample",
@@ -828,6 +901,8 @@ router.put("/:id", async (req, res) => {
       project_id: result.rows[0].project_id,
       meta: { updates: req.body },
     });
+
+    res.json(await enrichWithBoqInfo(result.rows[0]));
   } catch (error) {
     await client.query("ROLLBACK");
     console.error("Error updating sample:", error.message);
