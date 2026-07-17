@@ -172,6 +172,9 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *                     boq_qty:
  *                       type: number
  *                       description: Qty being ordered against that BOQ item
+ *                     boq_item_code:
+ *                       type: string
+ *                       description: Code for the BOQ item
  *               discount:
  *                 type: number
  *               discount_amount:
@@ -497,6 +500,9 @@ router.get("/:id", async (req, res) => {
  *                       description: Link to a BOQ item (boqs.boq_id) — informational only
  *                     boq_qty:
  *                       type: number
+ *                     boq_item_code:
+ *                       type: string
+ *                       description: Code for the BOQ item
  *               discount:
  *                 type: number
  *               discount_amount:
