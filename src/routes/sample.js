@@ -300,6 +300,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                     sr_no:         { type: integer, example: 1 }
  *                     item_name:     { type: string,  example: "Ceramic Tile", description: "Name of the item" }
  *                     item_code:     { type: string,  example: "ITM-007",      description: "Item code / SKU" }
+ *                     item_no:       { type: string,  example: "ITM-007",      description: "Item number for this line (optional). If boq_id is also linked, the response's item_no/boq_item_code reflect the linked BOQ item's item_code live, regardless of this value." }
  *                     brand_name:    { type: string,  example: "Kajaria",      description: "Brand of the item" }
  *                     description:   { type: string,  example: "60x60 Glossy White" }
  *                     specification: { type: string,  example: "Grade A, ISO certified" }
@@ -328,6 +329,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *               - sr_no: 1
  *                 item_name: "Ceramic Tile"
  *                 item_code: "ITM-007"
+ *                 item_no: "ITM-007"
  *                 brand_name: "Kajaria"
  *                 description: "60x60 Glossy White"
  *                 specification: "Grade A, ISO certified"
@@ -723,6 +725,7 @@ router.get("/:id", async (req, res) => {
  *                     sr_no:          { type: integer, example: 1 }
  *                     item_name:      { type: string,  example: "Ceramic Tile" }
  *                     item_code:      { type: string,  example: "ITM-007" }
+ *                     item_no:        { type: string,  example: "ITM-007", description: "Item number for this line (optional). If boq_id is also linked, the response's item_no/boq_item_code reflect the linked BOQ item's item_code live, regardless of this value." }
  *                     brand_name:     { type: string,  example: "Kajaria" }
  *                     description:    { type: string,  example: "60x60 Glossy White" }
  *                     specification:  { type: string,  example: "Grade A, ISO certified" }
@@ -755,6 +758,7 @@ router.get("/:id", async (req, res) => {
  *               - sr_no: 1
  *                 item_name: "Ceramic Tile"
  *                 item_code: "ITM-007"
+ *                 item_no: "ITM-007"
  *                 brand_name: "Kajaria"
  *                 description: "60x60 Glossy White"
  *                 specification: "Grade A, ISO certified"
