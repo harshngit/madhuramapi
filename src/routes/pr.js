@@ -142,6 +142,7 @@ async function getPrList(whereClause, values) {
              'boq_id',              pri.boq_id,
              'boq_qty',             pri.boq_qty,
              'boq_item_code',       b.item_code,
+             'item_no',             b.item_code,
              'boq_remaining_quantity', (COALESCE(b.quantity,0) - COALESCE(b.used_quantity,0))
            )
          ) FILTER (WHERE pri.pr_item_id IS NOT NULL),
@@ -235,6 +236,7 @@ router.post("/upload-signature", uploadSignature.single("file"), (req, res) => {
  *                     issued_qty:           { type: number,  description: "Qty to deduct (default: req_qty)" }
  *                     boq_id:               { type: integer, description: "Link to a BOQ item (boqs.boq_id) — informational only, does not deduct BOQ quantity" }
  *                     boq_qty:              { type: number,  description: "Qty being requisitioned against that BOQ item" }
+ *                     item_no:              { type: string,  description: "Read-only in the response — the linked BOQ item's item_no (same as boq_item_code, boqs.item_code)" }
  *     responses:
  *       201:
  *         description: PR created; linked inventory items deducted
@@ -297,6 +299,7 @@ router.post("/", async (req, res) => {
                   'boq_id',              pri.boq_id,
                   'boq_qty',             pri.boq_qty,
                   'boq_item_code',       b.item_code,
+                  'item_no',             b.item_code,
                   'boq_remaining_quantity', (COALESCE(b.quantity,0) - COALESCE(b.used_quantity,0))
                 )
               ) FILTER (WHERE pri.pr_item_id IS NOT NULL), '[]'::json) AS items

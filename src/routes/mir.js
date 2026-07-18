@@ -273,6 +273,7 @@ router.post("/upload-reference-doc", uploadReferenceDoc.single("file"), (req, re
  *                     remark:       { type: string }
  *                     inventory_id: { type: integer, description: "Link to inventories item" }
  *                     issued_qty:   { type: number,  description: "Qty to deduct (default: qty)" }
+ *                     item_no:      { type: string,  description: "BOQ item number for this line (optional, same as boqs.item_code)" }
  *                     boq_id:       { type: integer, description: "Link to a BOQ item (boqs.boq_id) — informational only, does not deduct BOQ quantity" }
  *                     boq_qty:      { type: number,  description: "Qty being recorded against that BOQ item" }
  *     responses:
@@ -478,6 +479,7 @@ router.post("/", async (req, res) => {
  *                     include_in_mir: { type: boolean }
  *                     inventory_id:   { type: integer, description: "Link to inventories item" }
  *                     issued_qty:     { type: number,  description: "Qty to deduct (default: qty)" }
+ *                     item_no:        { type: string,  description: "BOQ item number for this line (optional, same as boqs.item_code)" }
  *                     boq_id:         { type: integer, description: "Link to a BOQ item (boqs.boq_id) — informational only, does not deduct BOQ quantity" }
  *                     boq_qty:        { type: number,  description: "Qty being recorded against that BOQ item" }
  *           example:
@@ -551,6 +553,7 @@ router.post("/", async (req, res) => {
  *               - srno: 1
  *                 hsn: ""
  *                 item_code: ""
+ *                 item_no: ""
  *                 description: ""
  *                 name: ""
  *                 qty: 0
@@ -746,6 +749,7 @@ router.post("/lodha", async (req, res) => {
  *                     include_in_mir: { type: boolean }
  *                     inventory_id:   { type: integer, description: "Link to inventories item" }
  *                     issued_qty:     { type: number,  description: "Qty to deduct (default: qty)" }
+ *                     item_no:        { type: string,  description: "BOQ item number for this line (optional, same as boqs.item_code)" }
  *                     boq_id:         { type: integer, description: "Link to a BOQ item (boqs.boq_id) — informational only, does not deduct BOQ quantity" }
  *                     boq_qty:        { type: number,  description: "Qty being recorded against that BOQ item" }
  *           example:
@@ -809,6 +813,7 @@ router.post("/lodha", async (req, res) => {
  *               - srno: 1
  *                 hsn: ""
  *                 item_code: ""
+ *                 item_no: ""
  *                 description: ""
  *                 name: ""
  *                 qty: 0

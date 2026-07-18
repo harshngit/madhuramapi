@@ -174,6 +174,7 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *                     quantity:    { type: number }
  *                     price:       { type: number }
  *                     unit:        { type: string }
+ *                     item_no:     { type: string,  description: "BOQ item number for this line (optional, same as boqs.item_code)" }
  *                     boq_id:      { type: integer, description: "Link to a BOQ item (boqs.boq_id) — informational only, does not deduct BOQ quantity" }
  *                     boq_qty:     { type: number,  description: "Qty being delivered against that BOQ item" }
  *               challan_date:     { type: string, format: date }
