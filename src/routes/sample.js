@@ -223,7 +223,6 @@ async function enrichWithBoqInfo(samples, { full = false } = {}) {
       const base = {
         ...i,
         boq_item_code: boq.item_code,
-        item_no: boq.item_code,
         boq_description: boq.description,
         boq_remaining_quantity: Number(boq.quantity || 0) - Number(boq.used_quantity || 0),
         // Total times this BOQ item has been referenced system-wide (PR + PO + ITR + DC + MIR + samples)
@@ -300,7 +299,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                     sr_no:         { type: integer, example: 1 }
  *                     item_name:     { type: string,  example: "Ceramic Tile", description: "Name of the item" }
  *                     item_code:     { type: string,  example: "ITM-007",      description: "Item code / SKU" }
- *                     item_no:       { type: string,  example: "ITM-007",      description: "Item number for this line (optional). If boq_id is also linked, the response's item_no/boq_item_code reflect the linked BOQ item's item_code live, regardless of this value." }
+ *                     item_no:       { type: string,  example: "ITM-007",      description: "Item number for this line (optional) — stored and returned exactly as sent, independent of boq_item_code" }
  *                     brand_name:    { type: string,  example: "Kajaria",      description: "Brand of the item" }
  *                     description:   { type: string,  example: "60x60 Glossy White" }
  *                     specification: { type: string,  example: "Grade A, ISO certified" }
@@ -388,7 +387,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                       boq_issued:         { type: boolean }
  *                       boq_issued_at:      { type: string, format: date-time }
  *                       boq_item_code:      { type: string, description: "item_code of the linked BOQ item (looked up live, not stored)" }
- *                       item_no:            { type: string, description: "Same as boq_item_code — item_no of the linked BOQ item (looked up live, not stored)" }
+ *                       item_no:            { type: string, description: "As sent by the client and stored as-is — not overwritten by the linked BOQ item" }
  *                       boq_description:    { type: string, description: "description of the linked BOQ item (looked up live, not stored)" }
  *                       boq_remaining_quantity: { type: number, description: "Remaining quantity left on the linked BOQ item after this consumption" }
  *                 add_fields:       { type: array }
@@ -515,7 +514,7 @@ router.post("/create-sample", async (req, res) => {
  *                         boq_issued_qty:         { type: number, example: 100 }
  *                         boq_issued:             { type: boolean }
  *                         boq_item_code:          { type: string,  example: "ITM-007", description: "Looked up live from the linked BOQ item" }
- *                         item_no:                { type: string,  example: "ITM-007", description: "Same as boq_item_code — looked up live from the linked BOQ item" }
+ *                         item_no:                { type: string,  example: "ITM-007", description: "As sent by the client and stored as-is — not overwritten by the linked BOQ item" }
  *                         boq_description:        { type: string }
  *                         boq_remaining_quantity: { type: number }
  */
@@ -570,7 +569,7 @@ router.get("/", async (req, res) => {
  *                       properties:
  *                         boq_id:                 { type: integer, example: 7 }
  *                         boq_item_code:          { type: string, example: "ITM-007" }
- *                         item_no:                { type: string, example: "ITM-007", description: "Same as boq_item_code" }
+ *                         item_no:                { type: string, example: "ITM-007", description: "As sent by the client and stored as-is — not overwritten by the linked BOQ item" }
  *                         boq_description:        { type: string }
  *                         boq_remaining_quantity: { type: number }
  *       500:
@@ -639,7 +638,7 @@ router.get("/project/:projectId", async (req, res) => {
  *                       boq_issued_qty:         { type: number, example: 100 }
  *                       boq_issued:             { type: boolean }
  *                       boq_item_code:          { type: string, example: "ITM-007", description: "Looked up live from the linked BOQ item" }
- *                       item_no:                { type: string, example: "ITM-007", description: "Same as boq_item_code — looked up live from the linked BOQ item" }
+ *                       item_no:                { type: string, example: "ITM-007", description: "As sent by the client and stored as-is — not overwritten by the linked BOQ item" }
  *                       boq_description:        { type: string }
  *                       boq_remaining_quantity: { type: number }
  *                       boq_total_usage_count:  { type: integer, example: 5, description: "Total references across PR+PO+ITR+DC+MIR+Samples" }
@@ -725,7 +724,7 @@ router.get("/:id", async (req, res) => {
  *                     sr_no:          { type: integer, example: 1 }
  *                     item_name:      { type: string,  example: "Ceramic Tile" }
  *                     item_code:      { type: string,  example: "ITM-007" }
- *                     item_no:        { type: string,  example: "ITM-007", description: "Item number for this line (optional). If boq_id is also linked, the response's item_no/boq_item_code reflect the linked BOQ item's item_code live, regardless of this value." }
+ *                     item_no:        { type: string,  example: "ITM-007", description: "Item number for this line (optional) — stored and returned exactly as sent, independent of boq_item_code" }
  *                     brand_name:     { type: string,  example: "Kajaria" }
  *                     description:    { type: string,  example: "60x60 Glossy White" }
  *                     specification:  { type: string,  example: "Grade A, ISO certified" }
@@ -819,7 +818,7 @@ router.get("/:id", async (req, res) => {
  *                       boq_issued:     { type: boolean }
  *                       boq_issued_at:  { type: string, format: "date-time" }
  *                       boq_item_code:  { type: string, description: "item_code of the linked BOQ item (looked up live, not stored)" }
- *                       item_no:        { type: string, description: "Same as boq_item_code — item_no of the linked BOQ item (looked up live, not stored)" }
+ *                       item_no:        { type: string, description: "As sent by the client and stored as-is — not overwritten by the linked BOQ item" }
  *                       boq_description: { type: string, description: "description of the linked BOQ item (looked up live, not stored)" }
  *                       boq_remaining_quantity: { type: number, description: "Remaining quantity left on the linked BOQ item after this consumption" }
  *                 add_fields:       { type: array }
