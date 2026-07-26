@@ -224,6 +224,8 @@ async function enrichWithBoqInfo(samples, { full = false } = {}) {
         ...i,
         boq_item_code: boq.item_code,
         boq_description: boq.description,
+        boq_total_quantity: Number(boq.quantity || 0),
+        boq_used_quantity: Number(boq.used_quantity || 0),
         boq_remaining_quantity: Number(boq.quantity || 0) - Number(boq.used_quantity || 0),
         // Total times this BOQ item has been referenced system-wide (PR + PO + ITR + DC + MIR + samples)
         boq_total_usage_count: usageCounts[Number(i.boq_id)]?.total ?? 0,
@@ -389,6 +391,8 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                       boq_item_code:      { type: string, description: "item_code of the linked BOQ item (looked up live, not stored)" }
  *                       item_no:            { type: string, description: "As sent by the client and stored as-is — not overwritten by the linked BOQ item" }
  *                       boq_description:    { type: string, description: "description of the linked BOQ item (looked up live, not stored)" }
+ *                       boq_total_quantity: { type: number, description: "Total quantity on the linked BOQ item (boqs.quantity)" }
+ *                       boq_used_quantity:  { type: number, description: "Total quantity consumed so far on the linked BOQ item (boqs.used_quantity)" }
  *                       boq_remaining_quantity: { type: number, description: "Remaining quantity left on the linked BOQ item after this consumption" }
  *                 add_fields:       { type: array }
  *                 sample_file:      { type: string }
@@ -490,7 +494,7 @@ router.post("/create-sample", async (req, res) => {
  *     summary: Get all samples
  *     description: |
  *       Each item in `item_description` that carries a `boq_id` is enriched (live, not stored)
- *       with `boq_item_code`, `boq_description`, and `boq_remaining_quantity` from the linked BOQ item.
+ *       with `boq_item_code`, `boq_description`, `boq_total_quantity`, `boq_used_quantity`, and `boq_remaining_quantity` from the linked BOQ item.
  *     tags: [Sample]
  *     responses:
  *       200:
@@ -516,6 +520,8 @@ router.post("/create-sample", async (req, res) => {
  *                         boq_item_code:          { type: string,  example: "ITM-007", description: "Looked up live from the linked BOQ item" }
  *                         item_no:                { type: string,  example: "ITM-007", description: "As sent by the client and stored as-is — not overwritten by the linked BOQ item" }
  *                         boq_description:        { type: string }
+ *                         boq_total_quantity:     { type: number }
+ *                         boq_used_quantity:      { type: number }
  *                         boq_remaining_quantity: { type: number }
  */
 router.get("/", async (req, res) => {
@@ -543,7 +549,7 @@ router.get("/", async (req, res) => {
  *     summary: Get all samples for a specific project
  *     description: |
  *       Each item in `item_description` that carries a `boq_id` is enriched (live, not stored)
- *       with `boq_item_code`, `boq_description`, and `boq_remaining_quantity` from the linked BOQ item.
+ *       with `boq_item_code`, `boq_description`, `boq_total_quantity`, `boq_used_quantity`, and `boq_remaining_quantity` from the linked BOQ item.
  *     tags: [Sample]
  *     parameters:
  *       - in: path
@@ -571,6 +577,8 @@ router.get("/", async (req, res) => {
  *                         boq_item_code:          { type: string, example: "ITM-007" }
  *                         item_no:                { type: string, example: "ITM-007", description: "As sent by the client and stored as-is — not overwritten by the linked BOQ item" }
  *                         boq_description:        { type: string }
+ *                         boq_total_quantity:     { type: number }
+ *                         boq_used_quantity:      { type: number }
  *                         boq_remaining_quantity: { type: number }
  *       500:
  *         description: Server error
@@ -608,7 +616,7 @@ router.get("/project/:projectId", async (req, res) => {
  *     summary: Get a single sample by ID (includes full BOQ usage breakdown per item)
  *     description: |
  *       Each item in `item_description` that carries a `boq_id` is enriched (live, not stored)
- *       with `boq_item_code`, `boq_description`, and `boq_remaining_quantity` from the linked BOQ item,
+ *       with `boq_item_code`, `boq_description`, `boq_total_quantity`, `boq_used_quantity`, and `boq_remaining_quantity` from the linked BOQ item,
  *       plus a full `boq_usage` breakdown — every PR, PO, ITR, DC, and other Sample that has also
  *       referenced that same BOQ item (the same cross-reference `GET /api/boq/:id` returns, scoped
  *       to just the BOQ item(s) used in this sample). This is the one call for "open this sample,
@@ -640,6 +648,8 @@ router.get("/project/:projectId", async (req, res) => {
  *                       boq_item_code:          { type: string, example: "ITM-007", description: "Looked up live from the linked BOQ item" }
  *                       item_no:                { type: string, example: "ITM-007", description: "As sent by the client and stored as-is — not overwritten by the linked BOQ item" }
  *                       boq_description:        { type: string }
+ *                       boq_total_quantity:     { type: number }
+ *                       boq_used_quantity:      { type: number }
  *                       boq_remaining_quantity: { type: number }
  *                       boq_total_usage_count:  { type: integer, example: 5, description: "Total references across PR+PO+ITR+DC+MIR+Samples" }
  *                       boq_usage:
@@ -820,6 +830,8 @@ router.get("/:id", async (req, res) => {
  *                       boq_item_code:  { type: string, description: "item_code of the linked BOQ item (looked up live, not stored)" }
  *                       item_no:        { type: string, description: "As sent by the client and stored as-is — not overwritten by the linked BOQ item" }
  *                       boq_description: { type: string, description: "description of the linked BOQ item (looked up live, not stored)" }
+ *                       boq_total_quantity: { type: number, description: "Total quantity on the linked BOQ item (boqs.quantity)" }
+ *                       boq_used_quantity:  { type: number, description: "Total quantity consumed so far on the linked BOQ item (boqs.used_quantity)" }
  *                       boq_remaining_quantity: { type: number, description: "Remaining quantity left on the linked BOQ item after this consumption" }
  *                 add_fields:       { type: array }
  *                 sample_file:      { type: string }

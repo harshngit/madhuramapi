@@ -478,6 +478,27 @@ function parseHiranandaniBoqPdf(filePath) {
  *         value:
  *           type: string
  *           example: "177650.00"
+ *
+ *     RustomjeeBoqItem:
+ *       type: object
+ *       properties:
+ *         sr_no:
+ *           type: string
+ *           example: "1"
+ *         description:
+ *           type: string
+ *         unit:
+ *           type: string
+ *           example: "Sqft"
+ *         qty:
+ *           type: string
+ *           example: "150.00"
+ *         rate:
+ *           type: string
+ *           example: "120.00"
+ *         amount:
+ *           type: string
+ *           example: "18000.00"
  */
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -868,6 +889,150 @@ router.post("/hiranandani", upload.single("boq_file"), async (req, res) => {
     });
   } catch (err) {
     console.error("Error creating Hiranandani BOQ:", err);
+    if (err.code === "23503")
+      return res.status(400).json({ error: "Invalid project_id: Project does not exist" });
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// POST /api/boq/rustomjee  — Create a Rustomjee BOQ item
+//
+// Rustomjee fields: sr_no, description, unit, qty, rate, amount
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @swagger
+ * /api/boq/rustomjee:
+ *   post:
+ *     summary: Create a Rustomjee BOQ item
+ *     description: |
+ *       Creates a BOQ entry using the **Rustomjee** work order field layout:
+ *       `sr_no`, `description`, `unit`, `qty`, `rate`, `amount`.
+ *
+ *       These are mapped internally to the `boqs` table as:
+ *       - sr_no → item_no
+ *       - description → description
+ *       - unit → unit
+ *       - qty → quantity
+ *       - rate → rate
+ *       - amount → amount
+ *     tags: [BOQ]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - description
+ *               - project_id
+ *             properties:
+ *               sr_no:
+ *                 type: string
+ *                 description: Sr No as per Rustomjee BOQ
+ *               description:
+ *                 type: string
+ *                 description: Description as per Rustomjee BOQ
+ *               unit:
+ *                 type: string
+ *                 description: Unit of measurement
+ *               qty:
+ *                 type: number
+ *                 description: Quantity
+ *               rate:
+ *                 type: number
+ *                 description: Rate per unit
+ *               amount:
+ *                 type: number
+ *                 description: Total amount
+ *               project_id:
+ *                 type: integer
+ *                 description: Project ID (required)
+ *               project_name:
+ *                 type: string
+ *               floor:
+ *                 type: string
+ *               boq_file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       201:
+ *         description: Rustomjee BOQ item created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RustomjeeBoqItem'
+ *       400:
+ *         description: Missing required fields or invalid project_id
+ *       500:
+ *         description: Server error
+ */
+router.post("/rustomjee", upload.single("boq_file"), async (req, res) => {
+  try {
+    const {
+      sr_no, description, unit, qty, rate, amount,
+      project_id, project_name, floor,
+    } = req.body;
+
+    if (!description) {
+      return res.status(400).json({ error: "description is required" });
+    }
+    if (!project_id) {
+      return res.status(400).json({ error: "project_id is required" });
+    }
+
+    const boq_file = req.file ? `/uploads/boq/${req.file.filename}` : null;
+
+    const result = await pool.query(
+      `INSERT INTO boqs
+         (item_no, description, floor, unit, quantity, rate, amount, boq_file, project_id, project_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING *`,
+      [
+        sr_no || null,          // sr_no → item_no
+        description,            // description → description
+        floor || null,
+        unit || null,
+        parseFloat(qty) || 0,   // qty → quantity
+        parseFloat(rate) || 0,
+        parseFloat(amount) || 0,
+        boq_file,
+        parseInt(project_id),
+        project_name || null,
+      ]
+    );
+
+    const row = result.rows[0];
+
+    res.status(201).json({
+      boq_id:           row.boq_id,
+      client:           "rustomjee",
+      sr_no:            row.item_no,
+      description:      row.description,
+      unit:             row.unit,
+      qty:              row.quantity,
+      rate:             row.rate,
+      amount:           row.amount,
+      project_id:       row.project_id,
+      project_name:     row.project_name,
+      floor:            row.floor,
+      boq_file:         row.boq_file,
+      created_at:       row.created_at,
+    });
+
+    logActivity({
+      action: "created",
+      entity_type: "boq",
+      entity_id: row.boq_id,
+      entity_name: description || `Rustomjee BOQ #${row.boq_id}`,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id,
+      meta: { client: "rustomjee", sr_no, qty, amount },
+    });
+  } catch (err) {
+    console.error("Error creating Rustomjee BOQ:", err);
     if (err.code === "23503")
       return res.status(400).json({ error: "Invalid project_id: Project does not exist" });
     res.status(500).json({ error: "Internal Server Error" });
