@@ -18,3 +18,5 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             bash /var/www/madhuramapi/deploy.sh
+      - name: Test connectivity
+        run: nc -zv ${{ secrets.SSH_HOST }} 22
