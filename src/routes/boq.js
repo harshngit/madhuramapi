@@ -387,6 +387,8 @@ function parseHiranandaniBoqPdf(filePath) {
  *           type: string
  *         item_code:
  *           type: string
+ *         item_no:
+ *           type: string
  *         description:
  *           type: string
  *         floor:
@@ -533,6 +535,9 @@ function parseHiranandaniBoqPdf(filePath) {
  *               item_code:
  *                 type: string
  *                 description: Item code / SKU
+ *               item_no:
+ *                 type: string
+ *                 description: Item number for this line
  *               description:
  *                 type: string
  *                 description: Item description
@@ -576,7 +581,7 @@ function parseHiranandaniBoqPdf(filePath) {
 router.post("/", upload.single("boq_file"), async (req, res) => {
   try {
     const {
-      category, item_code, description, floor,
+      category, item_code, item_no, description, floor,
       unit, quantity, rate, amount, project_id, project_name
     } = req.body;
 
@@ -584,10 +589,10 @@ router.post("/", upload.single("boq_file"), async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO boqs
-         (category, item_code, description, floor, unit, quantity, rate, amount, boq_file, project_id, project_name)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         (category, item_code, item_no, description, floor, unit, quantity, rate, amount, boq_file, project_id, project_name)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING *`,
-      [category, item_code, description, floor, unit, quantity, rate, amount, boq_file, project_id, project_name]
+      [category, item_code, item_no, description, floor, unit, quantity, rate, amount, boq_file, project_id, project_name]
     );
 
     res.status(201).json(result.rows[0]);
