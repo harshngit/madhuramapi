@@ -94,52 +94,78 @@ async function processInventoryItems(client, {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HELPER: scan item_description array and deduct "used_quantity" on any BOQ
-// item referenced via boq_id. Mirrors processInventoryItems() above, but
-// tracks consumption against boqs.quantity instead of inventories.
+// HELPER: reconcile "used_quantity" on any BOQ item referenced via boq_id
+// against the item_description array being saved. Tracks consumption against
+// boqs.quantity instead of inventories (mirrors processInventoryItems() above
+// in spirit, but NOT in strategy — see below).
 //
-// item format (new fields added, all optional):
+// Unlike processInventoryItems() (which applies a stock-out once and then
+// skips already-issued items forever), this reconciles by DELTA every save:
+// it sums the previously-applied qty per boq_id (from previous_items) against
+// the newly-requested qty per boq_id (from items), and only pushes the
+// difference to boqs.used_quantity. That makes edits correct in both
+// directions — raising an item's quantity consumes more, lowering it (or
+// removing the item) gives the difference back — instead of the old
+// "first save wins, every later edit is a no-op" behaviour.
+//
+// item format (all optional):
 //   {
 //     ...existing fields,
-//     boq_id,          ← NEW: links to boqs table
-//     boq_issued_qty,  ← NEW: qty to consume from that BOQ item (falls back to `quantity`)
+//     boq_id,          ← links to boqs table
+//     boq_issued_qty,  ← qty to consume from that BOQ item (falls back to `quantity`)
 //   }
 // ─────────────────────────────────────────────────────────────────────────────
 async function processBoqItems(client, { items, previous_items = [] }) {
-  if (!Array.isArray(items) || items.length === 0) return;
+  if (!Array.isArray(items)) return;
 
-  const alreadyIssued = new Set(
-    previous_items
-      .filter(i => i.boq_id && i.boq_issued)
-      .map(i => Number(i.boq_id))
-  );
+  const sumByBoq = (list) => {
+    const map = new Map();
+    for (const i of list) {
+      if (!i.boq_id) continue;
+      const boqId = Number(i.boq_id);
+      const qty = Number(i.boq_issued_qty ?? i.quantity ?? 0);
+      map.set(boqId, (map.get(boqId) || 0) + qty);
+    }
+    return map;
+  };
 
-  for (const item of items) {
-    if (!item.boq_id) continue;                          // no link → skip
-    if (alreadyIssued.has(Number(item.boq_id))) continue; // already issued → skip
+  const prevQtyByBoq = sumByBoq(previous_items.filter(i => i.boq_issued));
+  const newQtyByBoq  = sumByBoq(items);
 
-    const qty = Number(item.boq_issued_qty ?? item.quantity ?? 0);
-    if (qty <= 0) continue;
+  const allBoqIds = new Set([...prevQtyByBoq.keys(), ...newQtyByBoq.keys()]);
+
+  for (const boqId of allBoqIds) {
+    const oldQty = prevQtyByBoq.get(boqId) || 0;
+    const newQty = newQtyByBoq.get(boqId) || 0;
+    const delta = newQty - oldQty;
+    if (delta === 0) continue;
 
     const boqRes = await client.query(
       "SELECT item_code, quantity, used_quantity FROM boqs WHERE boq_id = $1 FOR UPDATE",
-      [item.boq_id]
+      [boqId]
     );
-    if (boqRes.rows.length === 0)
-      throw new Error(`BOQ item ${item.boq_id} not found`);
+    if (boqRes.rows.length === 0) {
+      if (newQtyByBoq.has(boqId))
+        throw new Error(`BOQ item ${boqId} not found`);
+      continue; // was previously issued against a BOQ item that's since been deleted — nothing to reverse it into
+    }
 
     // No hard block on insufficient quantity — BOQ quantities are planning
-    // estimates, not a hard cap. used_quantity/remaining_quantity are just
-    // calculated and can go negative (over-consumption) without erroring.
+    // estimates, not a hard cap. remaining_quantity is just calculated and
+    // can go negative (over-consumption) without erroring. used_quantity
+    // itself is floored at 0 as a safety net against drifting negative.
     await client.query(
       `UPDATE boqs
-          SET used_quantity = COALESCE(used_quantity, 0) + $1,
+          SET used_quantity = GREATEST(COALESCE(used_quantity, 0) + $1, 0),
               updated_at = CURRENT_TIMESTAMP
         WHERE boq_id = $2`,
-      [qty, item.boq_id]
+      [delta, boqId]
     );
+  }
 
-    // Mark item as issued so re-saves don't double-deduct
+  // Stamp every boq-linked item as issued (so the response reflects current state)
+  for (const item of items) {
+    if (!item.boq_id) continue;
     item.boq_issued = true;
     item.boq_issued_at = new Date().toISOString();
   }

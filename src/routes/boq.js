@@ -1040,6 +1040,200 @@ router.post("/rustomjee", upload.single("boq_file"), async (req, res) => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+// POST /api/boq/bulk  — Create many BOQ items in one call
+//
+// Shared across all clients (generic/Lodha/Hiranandani/Rustomjee) — send items
+// using the generic boqs column names (item_no, item_code, description, unit,
+// quantity, rate, amount). Map your client-specific field names to these
+// before sending (e.g. Rustomjee's sr_no → item_no, qty → quantity).
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @swagger
+ * /api/boq/bulk:
+ *   post:
+ *     summary: Create many BOQ items in a single call
+ *     description: |
+ *       Bulk-inserts BOQ items for one project. Every item in `items` uses the
+ *       generic `boqs` field layout — `category`, `item_no`, `item_code`,
+ *       `description`, `floor`, `unit`, `quantity`, `rate`, `amount` — regardless
+ *       of which client (Lodha/Hiranandani/Rustomjee/generic) the data came from.
+ *       Map your client-specific fields to these names before sending
+ *       (e.g. Rustomjee's `sr_no` → `item_no`, `qty` → `quantity`).
+ *
+ *       All items are inserted in a single transaction — either all rows are
+ *       created, or none are (e.g. if `project_id` is invalid).
+ *
+ *       `items` is sent as a **JSON-stringified array** (this is a multipart/form-data
+ *       request because of `boq_file`, so it can't be a native JSON array field).
+ *       Each object in the array looks like this:
+ *       ```json
+ *       [
+ *         {
+ *           "category":    "Flooring",
+ *           "item_no":     "1",
+ *           "item_code":   "FLR-001",
+ *           "description": "Vitrified tile flooring",
+ *           "floor":       "Ground",
+ *           "unit":        "Sqft",
+ *           "quantity":    500,
+ *           "rate":        85,
+ *           "amount":      42500
+ *         },
+ *         {
+ *           "category":    "Finishing",
+ *           "item_no":     "2",
+ *           "item_code":   "PUT-002",
+ *           "description": "Wall putty",
+ *           "floor":       "Ground",
+ *           "unit":        "Bags",
+ *           "quantity":    40,
+ *           "rate":        380,
+ *           "amount":      15200
+ *         }
+ *       ]
+ *       ```
+ *       Only `description` is required per item — every other field is optional
+ *       and defaults to `null` (or `0` for numeric fields).
+ *     tags: [BOQ]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - project_id
+ *               - items
+ *             properties:
+ *               project_id:
+ *                 type: integer
+ *                 description: Project ID (required, applied to every item)
+ *               project_name:
+ *                 type: string
+ *               items:
+ *                 type: string
+ *                 description: JSON-stringified array of BOQ items (see example)
+ *                 example: '[{"item_no":"1","description":"Vitrified tile flooring","unit":"Sqft","quantity":500,"rate":85,"amount":42500},{"item_no":"2","description":"Wall putty","unit":"Bags","quantity":40,"rate":380,"amount":15200}]'
+ *               boq_file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Optional single PDF/reference file attached to every created row
+ *     responses:
+ *       201:
+ *         description: BOQ items created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 total:      { type: integer, example: 2 }
+ *                 project_id: { type: integer, example: 1 }
+ *                 boq_file:   { type: string, nullable: true }
+ *                 items:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/BOQ'
+ *       400:
+ *         description: Missing/invalid project_id, items not a non-empty array, or an item is missing description
+ *       500:
+ *         description: Server error
+ */
+router.post("/bulk", upload.single("boq_file"), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const { project_id, project_name } = req.body;
+
+    if (!project_id) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "project_id is required" });
+    }
+
+    let items = req.body.items;
+    if (typeof items === "string") {
+      try {
+        items = JSON.parse(items);
+      } catch (e) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "items must be valid JSON" });
+      }
+    }
+
+    if (!Array.isArray(items) || items.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "items is required and must be a non-empty array" });
+    }
+
+    const missingDescriptionAt = items.findIndex(i => !i.description);
+    if (missingDescriptionAt !== -1) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: `items[${missingDescriptionAt}].description is required` });
+    }
+
+    const boq_file = req.file ? `/uploads/boq/${req.file.filename}` : null;
+
+    const values = [];
+    const placeholders = [];
+    let p = 1;
+    for (const item of items) {
+      values.push(
+        item.category || null,
+        item.item_no || null,
+        item.item_code || null,
+        item.description,
+        item.floor || null,
+        item.unit || null,
+        parseFloat(item.quantity) || 0,
+        parseFloat(item.rate) || 0,
+        parseFloat(item.amount) || 0,
+        boq_file,
+        parseInt(project_id),
+        project_name || null
+      );
+      placeholders.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
+    }
+
+    const result = await client.query(
+      `INSERT INTO boqs
+         (category, item_no, item_code, description, floor, unit, quantity, rate, amount, boq_file, project_id, project_name)
+       VALUES ${placeholders.join(", ")}
+       RETURNING *`,
+      values
+    );
+
+    await client.query("COMMIT");
+
+    res.status(201).json({
+      total: result.rowCount,
+      project_id: parseInt(project_id),
+      boq_file,
+      items: result.rows,
+    });
+
+    logActivity({
+      action: "created",
+      entity_type: "boq",
+      entity_id: null,
+      entity_name: `Bulk BOQ Import (${result.rowCount} items)`,
+      performed_by: req.body.user_id || null,
+      performed_by_name: req.body.user_name || null,
+      project_id,
+      meta: { items_created: result.rowCount },
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error bulk creating BOQ items:", err);
+    if (err.code === "23503")
+      return res.status(400).json({ error: "Invalid project_id: Project does not exist" });
+    res.status(500).json({ error: "Internal Server Error" });
+  } finally {
+    client.release();
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 // GET /api/boq  — All BOQ records
 // ════════════════════════════════════════════════════════════════════════════
 
