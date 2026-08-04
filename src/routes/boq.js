@@ -510,6 +510,15 @@ function parseHiranandaniBoqPdf(filePath) {
  * /api/boq:
  *   post:
  *     summary: Create a new BOQ item (generic)
+ *     description: |
+ *       Creates a single BOQ entry using the plain `boqs` field layout — no
+ *       client-specific field mapping, unlike `/lodha`, `/hiranandani`, and
+ *       `/rustomjee` which translate their own field names onto these same
+ *       columns.
+ *
+ *       Unlike those client-specific endpoints, no fields are required here —
+ *       `description` and `project_id` are recommended (a row with neither is
+ *       hard to find or attribute later) but the API will accept a partial row.
  *     tags: [BOQ]
  *     requestBody:
  *       required: true
@@ -520,30 +529,45 @@ function parseHiranandaniBoqPdf(filePath) {
  *             properties:
  *               category:
  *                 type: string
+ *                 description: Free-text grouping/section label for this item
  *               item_code:
  *                 type: string
+ *                 description: Item code / SKU
  *               description:
  *                 type: string
+ *                 description: Item description
  *               floor:
  *                 type: string
+ *                 description: Floor this item applies to
  *               unit:
  *                 type: string
+ *                 description: Unit of measurement (e.g. Sqft, Nos, Bags)
  *               quantity:
  *                 type: number
+ *                 description: Quantity
  *               rate:
  *                 type: number
+ *                 description: Rate per unit
  *               amount:
  *                 type: number
+ *                 description: Total amount
  *               project_id:
  *                 type: integer
+ *                 description: Project this BOQ item belongs to
  *               project_name:
  *                 type: string
+ *                 description: Project name (denormalized, for display convenience)
  *               boq_file:
  *                 type: string
  *                 format: binary
+ *                 description: Optional PDF/reference file attached to this row
  *     responses:
  *       201:
  *         description: BOQ created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/BOQ'
  *       400:
  *         description: Invalid project_id
  *       500:
