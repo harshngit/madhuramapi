@@ -384,6 +384,42 @@ router.get("/project/:projectId", async (req, res) => {
 });
 
 // =============================================================================
+// GET ITRs FOR A SAMPLE  —  GET /api/itr/sample/:sampleId
+// =============================================================================
+
+/**
+ * @swagger
+ * /api/itr/sample/{sampleId}:
+ *   get:
+ *     summary: Get all ITRs linked to a specific sample
+ *     tags: [ITR]
+ *     parameters:
+ *       - in: path
+ *         name: sampleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: List of ITRs for the sample
+ *       500:
+ *         description: Internal server error
+ */
+router.get("/sample/:sampleId", async (req, res) => {
+  const { sampleId } = req.params;
+  try {
+    const result = await pool.query(
+      "SELECT * FROM itrs WHERE sample_id = $1 ORDER BY created_at DESC",
+      [sampleId]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching ITRs by sample:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// =============================================================================
 // GET SINGLE ITR  —  GET /api/itr/:id
 // =============================================================================
 

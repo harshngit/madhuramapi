@@ -249,6 +249,8 @@ router.post("/", async (req, res) => {
     });
   } catch (error) {
     console.error("Create attendance error:", error);
+    if (error.code === "23503" && error.constraint === "attendance_project_id_fkey")
+      return res.status(400).json({ error: `Invalid project_id: no project with id ${req.body.project_id} exists` });
     res.status(500).json({ error: "Failed to create attendance record" });
   }
 });

@@ -258,6 +258,7 @@ router.post("/upload-reference-doc", uploadReferenceDoc.single("file"), (req, re
  *               dynamic_field:        { type: array }
  *               project_id:           { type: integer }
  *               po_id:                { type: integer }
+ *               sample_id:            { type: string, description: "Link this MIR to a sample (samples.sample_id)" }
  *               items:
  *                 type: array
  *                 items:
@@ -292,7 +293,7 @@ router.post("/", async (req, res) => {
       vendor_code, challan_no, mir_refrence_no, material_code,
       inspection_date_time, client_submission_date,
       refrence_docs_attached, mir_submited, dynamic_field,
-      project_id, po_id, items,
+      project_id, po_id, sample_id, items,
     } = req.body;
 
     const mirItems = items || [];
@@ -302,8 +303,8 @@ router.post("/", async (req, res) => {
          project_name, project_code, client_name, pmc, contractor, vendor_code,
          challan_no, mir_refrence_no, material_code, inspection_date_time,
          client_submission_date, refrence_docs_attached, mir_submited,
-         dynamic_field, project_id, po_id, items
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+         dynamic_field, project_id, po_id, items, sample_id
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        RETURNING *`,
       [
         project_name, project_code, client_name, pmc, contractor,
@@ -313,6 +314,7 @@ router.post("/", async (req, res) => {
         JSON.stringify(dynamic_field || []),
         project_id, po_id || null,
         JSON.stringify(mirItems),
+        sample_id || null,
       ]
     );
 
@@ -398,6 +400,7 @@ router.post("/", async (req, res) => {
  *                     file_name: { type: string }
  *                     file_url:  { type: string }
  *               project_id:           { type: integer }
+ *               sample_id:            { type: string, description: "Link this MIR to a sample (samples.sample_id)" }
  *               mir_submited:         { type: boolean }
  *               request_submission:
  *                 type: object
@@ -580,7 +583,7 @@ router.post("/lodha", async (req, res) => {
       project_name, project_code, client_name, pmc, contractor, vendor_code,
       po_id, challan_no, mir_refrence_no, material_code,
       inspection_date_time, client_submission_date, refrence_docs_attached,
-      project_id, mir_submited, items,
+      project_id, mir_submited, sample_id, items,
     } = req.body;
 
     const mirItems  = items || [];
@@ -591,8 +594,8 @@ router.post("/lodha", async (req, res) => {
          project_name, project_code, client_name, pmc, contractor, vendor_code,
          po_id, challan_no, mir_refrence_no, material_code,
          inspection_date_time, client_submission_date, refrence_docs_attached,
-         project_id, template_type, mir_submited, lodha_data, items
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'lodha',$15,$16,$17)
+         project_id, template_type, mir_submited, lodha_data, items, sample_id
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'lodha',$15,$16,$17,$18)
        RETURNING *`,
       [
         project_name, project_code, client_name, pmc, contractor, vendor_code,
@@ -602,6 +605,7 @@ router.post("/lodha", async (req, res) => {
         project_id, mir_submited ?? false,
         JSON.stringify(lodhaData),
         JSON.stringify(mirItems),
+        sample_id || null,
       ]
     );
 
@@ -682,6 +686,7 @@ router.post("/lodha", async (req, res) => {
  *                     file_name: { type: string }
  *                     file_url:  { type: string }
  *               project_id:           { type: integer }
+ *               sample_id:            { type: string, description: "Link this MIR to a sample (samples.sample_id)" }
  *               mir_submited:         { type: boolean }
  *               control_form:         { type: string }
  *               revision:             { type: string }
@@ -840,7 +845,7 @@ router.post("/hiranandani", async (req, res) => {
       project_name, project_code, client_name, pmc, contractor, vendor_code,
       po_id, challan_no, mir_refrence_no, material_code,
       inspection_date_time, client_submission_date, refrence_docs_attached,
-      project_id, mir_submited, items,
+      project_id, mir_submited, sample_id, items,
     } = req.body;
 
     const mirItems        = items || [];
@@ -851,8 +856,8 @@ router.post("/hiranandani", async (req, res) => {
          project_name, project_code, client_name, pmc, contractor, vendor_code,
          po_id, challan_no, mir_refrence_no, material_code,
          inspection_date_time, client_submission_date, refrence_docs_attached,
-         project_id, template_type, mir_submited, hiranandani_data, items
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'hiranandani',$15,$16,$17)
+         project_id, template_type, mir_submited, hiranandani_data, items, sample_id
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'hiranandani',$15,$16,$17,$18)
        RETURNING *`,
       [
         project_name, project_code, client_name, pmc, contractor, vendor_code,
@@ -862,6 +867,7 @@ router.post("/hiranandani", async (req, res) => {
         project_id, mir_submited ?? false,
         JSON.stringify(hiranandaniData),
         JSON.stringify(mirItems),
+        sample_id || null,
       ]
     );
 
@@ -964,6 +970,37 @@ router.get("/project/:projectId", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mir/sample/:sampleId
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/mir/sample/{sampleId}:
+ *   get:
+ *     summary: Get all MIRs linked to a specific sample
+ *     description: Same flattening as GET /api/mir — template-specific fields appear at the top level based on template_type.
+ *     tags: [MIR]
+ *     parameters:
+ *       - in: path
+ *         name: sampleId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: List of MIRs for the sample
+ */
+router.get("/sample/:sampleId", async (req, res) => {
+  try {
+    const r = await pool.query(
+      "SELECT * FROM mirs WHERE sample_id=$1 ORDER BY created_at DESC",
+      [req.params.sampleId]
+    );
+    res.json(r.rows.map(flattenMir));
+  } catch (e) {
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/mir/:id
 // ─────────────────────────────────────────────────────────────────────────────
 /**
@@ -1027,7 +1064,7 @@ router.put("/:id", async (req, res) => {
       vendor_code, challan_no, mir_refrence_no, material_code,
       inspection_date_time, client_submission_date,
       refrence_docs_attached, mir_submited, dynamic_field, project_id,
-      items,
+      sample_id, items,
     } = req.body;
 
     // Fetch existing MIR to get previous items
@@ -1059,6 +1096,7 @@ router.put("/:id", async (req, res) => {
     if (mir_submited !== undefined)         { updateFields.push(`mir_submited=$${counter++}`);         values.push(mir_submited); }
     if (dynamic_field !== undefined)        { updateFields.push(`dynamic_field=$${counter++}`);        values.push(JSON.stringify(dynamic_field)); }
     if (project_id !== undefined)           { updateFields.push(`project_id=$${counter++}`);           values.push(project_id); }
+    if (sample_id !== undefined)            { updateFields.push(`sample_id=$${counter++}`);            values.push(sample_id || null); }
 
     // Handle items + inventory movements
     const newItems = items !== undefined ? [...items] : null;
@@ -1154,7 +1192,7 @@ router.put("/lodha/:id", async (req, res) => {
       project_name, project_code, client_name, pmc, contractor, vendor_code,
       po_id, challan_no, mir_refrence_no, material_code,
       inspection_date_time, client_submission_date,
-      refrence_docs_attached, mir_submited, project_id, items,
+      refrence_docs_attached, mir_submited, project_id, sample_id, items,
     } = req.body;
 
     const existing = await client.query("SELECT * FROM mirs WHERE mir_id=$1", [id]);
@@ -1188,6 +1226,7 @@ router.put("/lodha/:id", async (req, res) => {
     if (refrence_docs_attached !== undefined){ updateFields.push(`refrence_docs_attached=$${counter++}`); values.push(JSON.stringify(refrence_docs_attached)); }
     if (mir_submited !== undefined)          { updateFields.push(`mir_submited=$${counter++}`);          values.push(mir_submited); }
     if (project_id !== undefined)            { updateFields.push(`project_id=$${counter++}`);            values.push(project_id); }
+    if (sample_id !== undefined)             { updateFields.push(`sample_id=$${counter++}`);             values.push(sample_id || null); }
 
     updateFields.push(`template_type=$${counter++}`);
     values.push("lodha");
@@ -1282,7 +1321,7 @@ router.put("/hiranandani/:id", async (req, res) => {
       project_name, project_code, client_name, pmc, contractor, vendor_code,
       po_id, challan_no, mir_refrence_no, material_code,
       inspection_date_time, client_submission_date,
-      refrence_docs_attached, mir_submited, project_id, items,
+      refrence_docs_attached, mir_submited, project_id, sample_id, items,
     } = req.body;
 
     const existing = await client.query("SELECT * FROM mirs WHERE mir_id=$1", [id]);
@@ -1316,6 +1355,7 @@ router.put("/hiranandani/:id", async (req, res) => {
     if (refrence_docs_attached !== undefined){ updateFields.push(`refrence_docs_attached=$${counter++}`); values.push(JSON.stringify(refrence_docs_attached)); }
     if (mir_submited !== undefined)          { updateFields.push(`mir_submited=$${counter++}`);          values.push(mir_submited); }
     if (project_id !== undefined)            { updateFields.push(`project_id=$${counter++}`);            values.push(project_id); }
+    if (sample_id !== undefined)             { updateFields.push(`sample_id=$${counter++}`);             values.push(sample_id || null); }
 
     updateFields.push(`template_type=$${counter++}`);
     values.push("hiranandani");

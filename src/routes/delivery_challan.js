@@ -159,6 +159,7 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *             properties:
  *               project_id:       { type: integer }
  *               project_name:     { type: string }
+ *               sample_id:        { type: string, description: "Link this DC to a sample (samples.sample_id)" }
  *               po_id:            { type: integer }
  *               po_number:        { type: string }
  *               challan_number:   { type: string }
@@ -195,7 +196,7 @@ router.post("/", async (req, res) => {
     await client.query("BEGIN");
 
     const {
-      project_id, project_name,
+      project_id, project_name, sample_id,
       po_id, po_number,
       challan_number, items,
       challan_date, work_order_number, order_date,
@@ -239,8 +240,8 @@ router.post("/", async (req, res) => {
       `INSERT INTO delivery_challans
          (project_id, po_id, po_number, challan_number, items, challan_date,
           work_order_number, order_date, total_po_items, total_challan_items,
-          status, inventory_synced, inventory_synced_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          status, inventory_synced, inventory_synced_at, sample_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        RETURNING *`,
       [
         project_id, resolved_po_id || null, po_number || null,
@@ -249,6 +250,7 @@ router.post("/", async (req, res) => {
         total_po_items, total_challan_items, status,
         auto_sync_inventory ? true : false,
         auto_sync_inventory ? new Date() : null,
+        sample_id || null,
       ]
     );
 
@@ -423,6 +425,37 @@ router.get("/po/:poId", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/dc/sample/:sampleId
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/dc/sample/{sampleId}:
+ *   get:
+ *     summary: Get all Delivery Challans linked to a specific sample
+ *     tags: [DeliveryChallan]
+ *     parameters:
+ *       - in: path
+ *         name: sampleId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: List of Delivery Challans for the sample
+ */
+router.get("/sample/:sampleId", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM delivery_challans WHERE sample_id=$1 ORDER BY created_at DESC",
+      [req.params.sampleId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error fetching DCs by sample:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/dc/:id
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/:id", async (req, res) => {
@@ -466,7 +499,7 @@ router.get("/:id", async (req, res) => {
 router.put("/:id", async (req, res) => {
   const { id } = req.params;
   const {
-    project_id, po_id, po_number, challan_number,
+    project_id, po_id, po_number, challan_number, sample_id,
     items, challan_date, work_order_number, order_date,
   } = req.body;
 
@@ -508,13 +541,14 @@ router.put("/:id", async (req, res) => {
          total_po_items      = $9,
          total_challan_items = $10,
          status              = $11,
+         sample_id           = COALESCE($12, sample_id),
          updated_at          = CURRENT_TIMESTAMP
-       WHERE dc_id = $12 RETURNING *`,
+       WHERE dc_id = $13 RETURNING *`,
       [
         project_id || null, po_id || null, po_number || null, challan_number || null,
         items ? JSON.stringify(items) : null,
         challan_date || null, work_order_number || null, order_date || null,
-        total_po_items, total_challan_items, status, id,
+        total_po_items, total_challan_items, status, sample_id || null, id,
       ]
     );
 
