@@ -462,18 +462,57 @@ router.get("/sample/:sampleId", async (req, res) => {
  * @swagger
  * /api/dc/{id}:
  *   get:
- *     summary: Get a single Delivery Challan by ID
+ *     summary: Get a single Delivery Challan by delivery challan ID
  *     tags: [DeliveryChallan]
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
+ *         description: Delivery challan ID (`dc_id`)
  *         schema: { type: integer }
  *     responses:
  *       200:
  *         description: Delivery Challan details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 dc_id:                { type: integer, example: 12 }
+ *                 project_id:           { type: integer, example: 3 }
+ *                 po_id:                { type: integer, nullable: true, example: 8 }
+ *                 po_number:            { type: string, nullable: true, example: "PO-2026-001" }
+ *                 challan_number:       { type: string, example: "DC-2026-001" }
+ *                 sample_id:            { type: string, nullable: true, example: "SAMPLE-001" }
+ *                 items:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       name:        { type: string, example: "White Marble" }
+ *                       description: { type: string, nullable: true, example: "Polished slab" }
+ *                       width:       { type: number, nullable: true, example: 4.5 }
+ *                       length:      { type: number, nullable: true, example: 8 }
+ *                       quantity:    { type: number, example: 25 }
+ *                       price:       { type: number, nullable: true, example: 120 }
+ *                       unit:        { type: string, nullable: true, example: "sqft" }
+ *                       item_no:     { type: string, nullable: true, example: "BOQ-11" }
+ *                       boq_id:      { type: integer, nullable: true, example: 54 }
+ *                       boq_qty:     { type: number, nullable: true, example: 25 }
+ *                 challan_date:         { type: string, format: date, nullable: true, example: "2026-08-05" }
+ *                 work_order_number:    { type: string, nullable: true, example: "WO-2026-009" }
+ *                 order_date:           { type: string, format: date, nullable: true, example: "2026-08-01" }
+ *                 total_po_items:       { type: integer, nullable: true, example: 5 }
+ *                 total_challan_items:  { type: integer, example: 2 }
+ *                 status:               { type: string, example: "incomplete" }
+ *                 inventory_synced:     { type: boolean, example: true }
+ *                 inventory_synced_at:  { type: string, format: date-time, nullable: true }
+ *                 created_at:           { type: string, format: date-time }
+ *                 updated_at:           { type: string, format: date-time }
  *       404:
- *         description: Not found
+ *         description: Delivery Challan not found
+ *       500:
+ *         description: Server error
  */
 router.get("/:id", async (req, res) => {
   try {
