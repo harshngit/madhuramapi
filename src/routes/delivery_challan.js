@@ -458,6 +458,23 @@ router.get("/sample/:sampleId", async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/dc/:id
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/dc/{id}:
+ *   get:
+ *     summary: Get a single Delivery Challan by ID
+ *     tags: [DeliveryChallan]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Delivery Challan details
+ *       404:
+ *         description: Not found
+ */
 router.get("/:id", async (req, res) => {
   try {
     const result = await pool.query(
