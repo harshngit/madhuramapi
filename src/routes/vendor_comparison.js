@@ -55,6 +55,9 @@ const upload = multer({ storage });
  *               item_no:
  *                 type: string
  *                 description: BOQ item number for this line (optional, same as boqs.item_code)
+ *               item_code:
+ *                 type: string
+ *                 description: Item code / SKU for this line (optional)
  *               item_description:
  *                 type: string
  *               total_qty:
@@ -155,6 +158,7 @@ router.post("/upload", upload.array("files"), (req, res) => {
  *                     vendor_id: { type: integer }
  *                     vendor_name: { type: string }
  *                     item_no: { type: string, description: "BOQ item number for this line (optional)" }
+ *                     item_code: { type: string, description: "Item code / SKU for this line (optional)" }
  *                     item_description: { type: string }
  *                     total_qty: { type: number }
  *                     rate: { type: number }

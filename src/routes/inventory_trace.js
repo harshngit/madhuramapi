@@ -789,15 +789,62 @@ router.get("/chain/inventory/:inventoryId", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/inventory-trace/chain/sample/:sampleId
-// Sample → PR, PO, DC, Inventory items it generated downstream
+// Sample → PR, PO, DC, ITR, MIR, Inventory items it generated downstream
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/inventory-trace/chain/sample/{sampleId}:
+ *   get:
+ *     summary: Everything downstream of one sample (PR, PO, DC, ITR, MIR, inventory)
+ *     tags: [InventoryTrace]
+ *     description: |
+ *       DOWNSTREAM (where this sample led):
+ *         Sample → PR / PO / DC / ITR / MIR → Inventory
+ *     parameters:
+ *       - in: path
+ *         name: sampleId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Downstream chain + summary counts
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sample:
+ *                   type: object
+ *                   description: The sample row
+ *                 downstream:
+ *                   type: object
+ *                   properties:
+ *                     prs:               { type: array, items: { type: object } }
+ *                     pos:               { type: array, items: { type: object } }
+ *                     delivery_challans: { type: array, items: { type: object } }
+ *                     itrs:              { type: array, items: { type: object } }
+ *                     mirs:              { type: array, items: { type: object } }
+ *                     inventory_items:   { type: array, items: { type: object } }
+ *                 summary:
+ *                   type: object
+ *                   properties:
+ *                     pr_count:        { type: integer, example: 1 }
+ *                     po_count:        { type: integer, example: 1 }
+ *                     dc_count:        { type: integer, example: 2 }
+ *                     itr_count:       { type: integer, example: 3 }
+ *                     mir_count:       { type: integer, example: 1 }
+ *                     inventory_items: { type: integer, example: 4 }
+ *                     total_balance:   { type: number,  example: 250 }
+ *       404:
+ *         description: Sample not found
+ */
 router.get("/chain/sample/:sampleId", async (req, res) => {
   try {
     const { sampleId } = req.params;
     const sampleRes = await pool.query("SELECT * FROM samples WHERE sample_id=$1", [sampleId]);
     if (!sampleRes.rows.length) return res.status(404).json({ error: "Sample not found" });
 
-    const [prs, pos, dcs, inv] = await Promise.all([
+    const [prs, pos, dcs, itrs, mirs, inv] = await Promise.all([
       pool.query(`SELECT pr.pr_id, pr.project_name, pr.workorder_no,
                          COUNT(pri.pr_item_id) AS item_count
                     FROM purchase_requisitions pr
@@ -807,6 +854,8 @@ router.get("/chain/sample/:sampleId", async (req, res) => {
       pool.query(`SELECT dc.dc_id,dc.challan_number,dc.challan_date,dc.status,dc.inventory_synced
                     FROM delivery_challans dc JOIN pos po ON po.po_id=dc.po_id
                    WHERE po.sample_id=$1 ORDER BY dc.created_at`, [sampleId]),
+      pool.query("SELECT itr_id,itr_ref_no,status,created_at FROM itrs WHERE sample_id=$1 ORDER BY created_at", [sampleId]),
+      pool.query("SELECT mir_id,mir_refrence_no,template_type,mir_submited,created_at FROM mirs WHERE sample_id=$1 ORDER BY created_at", [sampleId]),
       pool.query(`SELECT inventory_id,name,brand,units,current_quantity,source_dc_id
                     FROM inventories WHERE source_sample_id=$1 ORDER BY created_at`, [sampleId]),
     ]);
@@ -817,12 +866,16 @@ router.get("/chain/sample/:sampleId", async (req, res) => {
         prs:               prs.rows,
         pos:               pos.rows,
         delivery_challans: dcs.rows,
+        itrs:              itrs.rows,
+        mirs:              mirs.rows,
         inventory_items:   inv.rows,
       },
       summary: {
         pr_count:        prs.rows.length,
         po_count:        pos.rows.length,
         dc_count:        dcs.rows.length,
+        itr_count:       itrs.rows.length,
+        mir_count:       mirs.rows.length,
         inventory_items: inv.rows.length,
         total_balance:   inv.rows.reduce((a, r) => a + Number(r.current_quantity), 0),
       },
