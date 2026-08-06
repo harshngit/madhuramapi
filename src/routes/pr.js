@@ -81,40 +81,78 @@ async function insertItems(client, prId, items, {
     values
   );
 
-  // Now run stock-out for every item that carries an inventory_id
+  // Now run stock-out for every item that carries an inventory_id.
+  // Stock for one material is often split across several inventories rows
+  // (each sample/DC/PO stock-in creates its own row rather than accumulating
+  // into an existing one), so if the chosen inventory_id alone can't cover
+  // the requested qty, pull the shortfall from other rows for the same
+  // material (same name + project) before failing.
   for (const item of items) {
     if (!item.inventory_id) continue;
 
     const qty = Number(item.issued_qty ?? item.req_qty ?? 0);
     if (qty <= 0) continue;
 
-    // Validate stock
-    const invRes = await client.query(
-      "SELECT name, current_quantity FROM inventories WHERE inventory_id = $1 FOR UPDATE",
+    const primaryRes = await client.query(
+      "SELECT inventory_id, name, project_id, current_quantity FROM inventories WHERE inventory_id = $1 FOR UPDATE",
       [item.inventory_id]
     );
-    if (invRes.rows.length === 0)
+    if (primaryRes.rows.length === 0)
       throw new Error(`Inventory item ${item.inventory_id} not found`);
+    const primary = primaryRes.rows[0];
 
-    const available = Number(invRes.rows[0].current_quantity) || 0;
-    if (available < qty)
+    const othersRes = await client.query(
+      `SELECT inventory_id, current_quantity FROM inventories
+         WHERE inventory_id <> $1
+           AND current_quantity > 0
+           AND lower(name) = lower($2)
+           AND project_id IS NOT DISTINCT FROM $3
+         ORDER BY created_at ASC
+         FOR UPDATE`,
+      [primary.inventory_id, primary.name, primary.project_id]
+    );
+
+    let remaining = qty;
+    const deductions = [];
+
+    const primaryAvail = Number(primary.current_quantity) || 0;
+    const takeFromPrimary = Math.min(primaryAvail, remaining);
+    if (takeFromPrimary > 0) {
+      deductions.push({ inventory_id: primary.inventory_id, take: takeFromPrimary });
+      remaining -= takeFromPrimary;
+    }
+
+    for (const row of othersRes.rows) {
+      if (remaining <= 0) break;
+      const avail = Number(row.current_quantity) || 0;
+      const take = Math.min(avail, remaining);
+      if (take > 0) {
+        deductions.push({ inventory_id: row.inventory_id, take });
+        remaining -= take;
+      }
+    }
+
+    if (remaining > 0) {
       throw new Error(
-        `Insufficient stock for "${invRes.rows[0].name}": available ${available}, requested ${qty}`
+        `Insufficient stock for "${primary.name}": available ${qty - remaining}, requested ${qty}`
       );
+    }
 
-    await recordMovement(client, {
-      inventory_id:      item.inventory_id,
-      movement_type:     "out",
-      quantity:          qty,
-      source_type:       "pr",
-      source_id:         prId,
-      source_ref:        pr_ref || `PR #${prId}`,
-      project_id,
-      project_name,
-      notes:             `Issued for PR item: ${item.material_description || ""}`,
-      performed_by,
-      performed_by_name,
-    });
+    for (const d of deductions) {
+      await recordMovement(client, {
+        inventory_id:      d.inventory_id,
+        movement_type:     "out",
+        quantity:          d.take,
+        source_type:       "pr",
+        source_id:         prId,
+        source_ref:        pr_ref || `PR #${prId}`,
+        project_id,
+        project_name,
+        notes:             `Issued for PR item: ${item.material_description || ""}`,
+        performed_by,
+        performed_by_name,
+      });
+    }
   }
 }
 
@@ -512,29 +550,32 @@ router.put("/:id", async (req, res) => {
     const pr = headerRes.rows[0];
 
     if (items !== undefined) {
-      // Fetch existing items to see which inventory_ids already had stock-outs
-      const existingItems = await client.query(
-        "SELECT inventory_id, issued_qty FROM purchase_requisition_items WHERE pr_id = $1",
+      // Reverse ALL previous stock-outs recorded for this PR (read from the
+      // inventory_movements audit log, not from purchase_requisition_items —
+      // a single PR item's issued_qty may have been drawn from multiple
+      // inventory rows for the same material, so the movements log is the
+      // only accurate record of what was actually deducted and from where).
+      // insertItems() below then issues fresh stock-outs for whatever the
+      // new item list actually needs.
+      const movementsRes = await client.query(
+        `SELECT inventory_id, SUM(quantity) AS qty
+           FROM inventory_movements
+          WHERE source_type = 'pr' AND source_id = $1 AND movement_type = 'out'
+          GROUP BY inventory_id`,
         [id]
       );
-      // Reverse previous stock-outs for items whose inventory_id is being removed
-      // (optional safeguard — only reverse if inventory_id not present in new items)
-      const newInvIds = new Set(items.filter(i => i.inventory_id).map(i => Number(i.inventory_id)));
-      for (const old of existingItems.rows) {
-        if (!old.inventory_id) continue;
-        if (newInvIds.has(Number(old.inventory_id))) continue; // still in list → keep
-        // Was in old list but removed → reverse the stock-out (stock-in)
-        const oldQty = Number(old.issued_qty) || 0;
+      for (const row of movementsRes.rows) {
+        const oldQty = Number(row.qty) || 0;
         if (oldQty > 0) {
           await recordMovement(client, {
-            inventory_id:  old.inventory_id,
+            inventory_id:  row.inventory_id,
             movement_type: "in",
             quantity:      oldQty,
             source_type:   "pr",
             source_id:     Number(id),
             source_ref:    pr.pr_number || `PR #${id}`,
             project_id:    pr.project_id,
-            notes:         `Reversed: PR item removed on update`,
+            notes:         `Reversed: PR updated (items replaced)`,
             performed_by:  req.body.user_id || null,
             performed_by_name: req.body.user_name || null,
           });
@@ -582,16 +623,22 @@ router.delete("/:id", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // Reverse any inventory stock-outs before deleting
-    const itemsRes = await client.query(
-      "SELECT inventory_id, issued_qty FROM purchase_requisition_items WHERE pr_id=$1 AND inventory_id IS NOT NULL",
+    // Reverse any inventory stock-outs before deleting. Read the actual
+    // deductions from inventory_movements (not purchase_requisition_items)
+    // since a single PR item's issued_qty may have been split across
+    // multiple inventory rows for the same material.
+    const movementsRes = await client.query(
+      `SELECT inventory_id, SUM(quantity) AS qty
+         FROM inventory_movements
+        WHERE source_type = 'pr' AND source_id = $1 AND movement_type = 'out'
+        GROUP BY inventory_id`,
       [req.params.id]
     );
-    for (const item of itemsRes.rows) {
-      const qty = Number(item.issued_qty) || 0;
+    for (const row of movementsRes.rows) {
+      const qty = Number(row.qty) || 0;
       if (qty > 0) {
         await recordMovement(client, {
-          inventory_id:  item.inventory_id,
+          inventory_id:  row.inventory_id,
           movement_type: "in",
           quantity:      qty,
           source_type:   "pr",
