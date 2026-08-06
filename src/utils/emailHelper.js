@@ -61,6 +61,7 @@ const generateEmailTemplate = ({ title, message, infoItems, items, tableHeaders,
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; line-height: 1.6; margin: 0; padding: 0; background-color: #f4f7fa; }
     .container { max-width: 800px; margin: 20px auto; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
     .header { background-color: ${accentColor}; color: white; padding: 30px; text-align: center; }
+    .header .company-name { margin: 0 0 6px 0; font-size: 16px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; opacity: 0.9; }
     .header h1 { margin: 0; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }
     .content { padding: 30px; }
     .info-section { display: flex; flex-wrap: wrap; margin-bottom: 25px; border-bottom: 2px solid #f0f0f0; padding-bottom: 20px; }
@@ -89,6 +90,7 @@ const generateEmailTemplate = ({ title, message, infoItems, items, tableHeaders,
 <body>
   <div class="container">
     <div class="header">
+      <div class="company-name">Madhuram Enterprises</div>
       <h1>${title}</h1>
     </div>
     <div class="content">

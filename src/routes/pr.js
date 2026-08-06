@@ -852,7 +852,7 @@ router.post("/:id/send-email", async (req, res) => {
       { label: "MIR No", value: pr.mirno }
     ].filter(i => i.value);
 
-    const tableHeaders = ["Description", "Unit", "Req Qty", "Make", "Place of Utilisation"];
+    const tableHeaders = ["Description", "UOM", "Req Qty", "Make", "Place of Utilisation"];
     const prItems = Array.isArray(pr.items) ? pr.items : [];
 
     const htmlBody = generateEmailTemplate({
