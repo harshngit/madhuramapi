@@ -40,6 +40,7 @@ const uploadSignature = multer({ storage: signatureStorage });
 // PR item format (new fields, all optional):
 //   {
 //     material_description, unit, req_qty, make, place_of_utilisation,  ← existing
+//     quantity,        ← NEW: plain quantity value, mirrors samples' item.quantity
 //     inventory_id,    ← link to inventories row
 //     issued_qty,      ← qty to deduct (defaults to req_qty)
 //     boq_id,          ← NEW: link to boqs row (informational only — does not
@@ -68,15 +69,16 @@ async function insertItems(client, prId, items, {
       item.issued_qty != null ? Number(item.issued_qty) : null,  // ← new column
       item.boq_id || null,            // ← new column
       item.boq_qty != null ? Number(item.boq_qty) : null,  // ← new column
-      item.item_no || null            // ← stored as sent, independent of boq_item_code
+      item.item_no || null,           // ← stored as sent, independent of boq_item_code
+      item.quantity != null ? Number(item.quantity) : null  // ← new column
     );
-    placeholders.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
+    placeholders.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
   }
 
   await client.query(
     `INSERT INTO purchase_requisition_items
        (pr_id, material_description, unit, req_qty, make,
-        place_of_utilisation, inventory_id, issued_qty, boq_id, boq_qty, item_no)
+        place_of_utilisation, inventory_id, issued_qty, boq_id, boq_qty, item_no, quantity)
      VALUES ${placeholders.join(", ")}`,
     values
   );
@@ -170,6 +172,7 @@ async function getPrList(whereClause, values) {
              'material_description',pri.material_description,
              'unit',                pri.unit,
              'req_qty',             pri.req_qty,
+             'quantity',            pri.quantity,
              'make',                pri.make,
              'place_of_utilisation',pri.place_of_utilisation,
              'inventory_id',        pri.inventory_id,
@@ -229,6 +232,7 @@ router.post("/upload-signature", uploadSignature.single("file"), (req, res) => {
 //     material_description: "Tile 60x60",
 //     unit: "sqft",
 //     req_qty: 100,
+//     quantity: 100,       ← plain quantity value, mirrors sample items' quantity field
 //     make: "Kajaria",
 //     inventory_id: 12,    ← which inventory item to consume
 //     issued_qty: 100,     ← qty to deduct (defaults to req_qty)
@@ -269,6 +273,7 @@ router.post("/upload-signature", uploadSignature.single("file"), (req, res) => {
  *                     material_description: { type: string }
  *                     unit:                 { type: string }
  *                     req_qty:              { type: number }
+ *                     quantity:             { type: number,  description: "Plain quantity value for this line, mirrors sample items' quantity field" }
  *                     make:                 { type: string }
  *                     place_of_utilisation: { type: string }
  *                     inventory_id:         { type: integer, description: "Link to inventories item" }
@@ -331,6 +336,7 @@ router.post("/", async (req, res) => {
                   'material_description',pri.material_description,
                   'unit',                pri.unit,
                   'req_qty',             pri.req_qty,
+                  'quantity',            pri.quantity,
                   'make',                pri.make,
                   'place_of_utilisation',pri.place_of_utilisation,
                   'inventory_id',        pri.inventory_id,
