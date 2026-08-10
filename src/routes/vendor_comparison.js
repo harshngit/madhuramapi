@@ -66,6 +66,12 @@ const upload = multer({ storage });
  *                 type: number
  *               amount:
  *                 type: number
+ *               discount:
+ *                 type: number
+ *               sgst:
+ *                 type: number
+ *               cgst:
+ *                 type: number
  *         upload_document:
  *           type: array
  *           items:
@@ -163,6 +169,9 @@ router.post("/upload", upload.array("files"), (req, res) => {
  *                     total_qty: { type: number }
  *                     rate: { type: number }
  *                     amount: { type: number }
+ *                     discount: { type: number }
+ *                     sgst: { type: number }
+ *                     cgst: { type: number }
  *               upload_document:
  *                 type: array
  *                 items:

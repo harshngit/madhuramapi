@@ -2,7 +2,7 @@
 CREATE TABLE IF NOT EXISTS vendor_comparisons (
     comparison_id SERIAL PRIMARY KEY,
     project_id INTEGER REFERENCES projects(project_id) ON DELETE CASCADE,
-    pricelist JSONB DEFAULT '[]'::jsonb, -- Array of { vendor_name, item_description, total_qty, rate, amount }
+    pricelist JSONB DEFAULT '[]'::jsonb, -- Array of { vendor_id, vendor_name, item_no, item_code, item_description, total_qty, rate, amount, discount, sgst, cgst }
     upload_document JSONB DEFAULT '[]'::jsonb, -- Array of { file_name, file_url }
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
