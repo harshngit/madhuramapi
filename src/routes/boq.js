@@ -1880,6 +1880,17 @@ router.get("/project/:projectId/items", async (req, res) => {
  *                           site_name:     { type: string, example: "Main Site" }
  *                           project_id:    { type: integer, example: 1 }
  *                           qty:           { type: number, example: 30, description: "Quantity of this BOQ item consumed by that sample" }
+ *                     used_in_installation:
+ *                       type: array
+ *                       description: Installations that have linked (consumed quantity from) this BOQ item
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           installation_id: { type: string, example: "INSTALL-001" }
+ *                           building_name:   { type: string, example: "Block A" }
+ *                           site_name:       { type: string, example: "Main Site" }
+ *                           project_id:      { type: integer, example: 1 }
+ *                           qty:             { type: number, example: 30, description: "Quantity of this BOQ item consumed by that installation" }
  *                     used_in_pr:
  *                       type: array
  *                       description: PRs that reference this BOQ item (informational — does not affect remaining_quantity)
@@ -1933,15 +1944,16 @@ router.get("/project/:projectId/items", async (req, res) => {
  *                           project_id:      { type: integer }
  *                     usage_counts:
  *                       type: object
- *                       description: Count of references per source, plus a grand total across all 6
+ *                       description: Count of references per source, plus a grand total across all 7
  *                       properties:
- *                         samples: { type: integer, example: 2 }
- *                         pr:      { type: integer, example: 1 }
- *                         po:      { type: integer, example: 1 }
- *                         itr:     { type: integer, example: 0 }
- *                         dc:      { type: integer, example: 3 }
- *                         mir:     { type: integer, example: 1 }
- *                         total:   { type: integer, example: 8 }
+ *                         samples:      { type: integer, example: 2 }
+ *                         installation: { type: integer, example: 1 }
+ *                         pr:           { type: integer, example: 1 }
+ *                         po:           { type: integer, example: 1 }
+ *                         itr:          { type: integer, example: 0 }
+ *                         dc:           { type: integer, example: 3 }
+ *                         mir:          { type: integer, example: 1 }
+ *                         total:        { type: integer, example: 9 }
  *       404:
  *         description: BOQ not found
  */

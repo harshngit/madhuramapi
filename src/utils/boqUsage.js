@@ -1,11 +1,15 @@
 const { pool } = require("../db");
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Cross-entity BOQ usage lookups. Informational only — none of PR/PO/ITR/DC/MIR
-// deduct from boqs.used_quantity; only samples does (see src/routes/sample.js).
+// Cross-entity BOQ usage lookups. Informational only — none of PR/PO/ITR/DC/MIR/
+// Installation deduct from boqs.used_quantity; only samples does (see
+// src/routes/sample.js) — installations mirror that same behavior independently
+// (see src/routes/installation.js) but both only affect boqs.used_quantity, not
+// these usage counts, which are pure reference counts across every entity.
 //
 // Linkage shape per entity:
 //   samples                : item_description[]        item.boq_id, item.boq_issued_qty
+//   installations           : item_description[]        item.boq_id, item.boq_issued_qty
 //   purchase_requisition_items (real table): boq_id, boq_qty columns
 //   pos                     : items[]                   item.boq_id, item.boq_qty
 //   itrs                    : work_items[]               item.boq_id, item.boq_qty
@@ -15,19 +19,26 @@ const { pool } = require("../db");
 
 // Batched counts for many boq_ids at once — used to annotate a list of items
 // (e.g. a sample's item_description) with each item's total system-wide usage.
-// Returns { [boq_id]: { samples, pr, po, itr, dc, mir, total } }
+// Returns { [boq_id]: { samples, installation, pr, po, itr, dc, mir, total } }
 async function getBoqUsageCounts(boqIds) {
   const ids = [...new Set((boqIds || []).map(Number).filter(Boolean))];
   const out = {};
-  for (const id of ids) out[id] = { samples: 0, pr: 0, po: 0, itr: 0, dc: 0, mir: 0, total: 0 };
+  for (const id of ids) out[id] = { samples: 0, installation: 0, pr: 0, po: 0, itr: 0, dc: 0, mir: 0, total: 0 };
   if (ids.length === 0) return out;
 
   const idsText = ids.map(String);
 
-  const [samplesRes, prRes, poRes, itrRes, dcRes, mirRes] = await Promise.all([
+  const [samplesRes, installationsRes, prRes, poRes, itrRes, dcRes, mirRes] = await Promise.all([
     pool.query(
       `SELECT elem->>'boq_id' AS boq_id, COUNT(*) AS cnt
          FROM samples, jsonb_array_elements(item_description) elem
+        WHERE elem->>'boq_id' = ANY($1::text[])
+        GROUP BY 1`,
+      [idsText]
+    ),
+    pool.query(
+      `SELECT elem->>'boq_id' AS boq_id, COUNT(*) AS cnt
+         FROM installations, jsonb_array_elements(item_description) elem
         WHERE elem->>'boq_id' = ANY($1::text[])
         GROUP BY 1`,
       [idsText]
@@ -73,6 +84,7 @@ async function getBoqUsageCounts(boqIds) {
     if (out[r.boq_id]) out[r.boq_id][key] = Number(r.cnt);
   });
   apply(samplesRes.rows, "samples");
+  apply(installationsRes.rows, "installation");
   apply(prRes.rows, "pr");
   apply(poRes.rows, "po");
   apply(itrRes.rows, "itr");
@@ -81,7 +93,7 @@ async function getBoqUsageCounts(boqIds) {
 
   for (const id of ids) {
     const u = out[id];
-    u.total = u.samples + u.pr + u.po + u.itr + u.dc + u.mir;
+    u.total = u.samples + u.installation + u.pr + u.po + u.itr + u.dc + u.mir;
   }
   return out;
 }
@@ -89,11 +101,18 @@ async function getBoqUsageCounts(boqIds) {
 // Full detail lists for ONE boq_id — used by GET /api/boq/:id.
 async function getBoqUsageDetails(boqId) {
   const boqIdText = String(boqId);
-  const [samplesRes, prRes, poRes, itrRes, dcRes, mirRes] = await Promise.all([
+  const [samplesRes, installationsRes, prRes, poRes, itrRes, dcRes, mirRes] = await Promise.all([
     pool.query(
       `SELECT s.sample_id, s.building_name, s.site_name, s.project_id,
               NULLIF(elem->>'boq_issued_qty', '')::numeric AS qty
          FROM samples s, jsonb_array_elements(s.item_description) elem
+        WHERE elem->>'boq_id' = $1`,
+      [boqIdText]
+    ),
+    pool.query(
+      `SELECT inst.installation_id, inst.building_name, inst.site_name, inst.project_id,
+              NULLIF(elem->>'boq_issued_qty', '')::numeric AS qty
+         FROM installations inst, jsonb_array_elements(inst.item_description) elem
         WHERE elem->>'boq_id' = $1`,
       [boqIdText]
     ),
@@ -135,20 +154,22 @@ async function getBoqUsageDetails(boqId) {
   ]);
 
   return {
-    used_in_samples: samplesRes.rows,
-    used_in_pr:       prRes.rows,
-    used_in_po:       poRes.rows,
-    used_in_itr:      itrRes.rows,
-    used_in_dc:       dcRes.rows,
-    used_in_mir:      mirRes.rows,
+    used_in_samples:      samplesRes.rows,
+    used_in_installation: installationsRes.rows,
+    used_in_pr:           prRes.rows,
+    used_in_po:           poRes.rows,
+    used_in_itr:          itrRes.rows,
+    used_in_dc:           dcRes.rows,
+    used_in_mir:          mirRes.rows,
     usage_counts: {
-      samples: samplesRes.rowCount,
-      pr:      prRes.rowCount,
-      po:      poRes.rowCount,
-      itr:     itrRes.rowCount,
-      dc:      dcRes.rowCount,
-      mir:     mirRes.rowCount,
-      total:   samplesRes.rowCount + prRes.rowCount + poRes.rowCount + itrRes.rowCount + dcRes.rowCount + mirRes.rowCount,
+      samples:      samplesRes.rowCount,
+      installation: installationsRes.rowCount,
+      pr:           prRes.rowCount,
+      po:           poRes.rowCount,
+      itr:          itrRes.rowCount,
+      dc:           dcRes.rowCount,
+      mir:          mirRes.rowCount,
+      total:        samplesRes.rowCount + installationsRes.rowCount + prRes.rowCount + poRes.rowCount + itrRes.rowCount + dcRes.rowCount + mirRes.rowCount,
     },
   };
 }

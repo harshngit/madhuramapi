@@ -135,6 +135,15 @@ async function resolveSourceName(sourceType, sourceId) {
           ? { label: `MIR: ${r.rows[0].mir_refrence_no || `#${sourceId}`}`, ...r.rows[0] }
           : null;
       }
+      case "installation": {
+        const r = await pool.query(
+          "SELECT building_name, site_name FROM installations WHERE installation_id = $1",
+          [sourceId]
+        );
+        return r.rows[0]
+          ? { label: `Installation: ${r.rows[0].building_name || r.rows[0].site_name || `#${sourceId}`}`, ...r.rows[0] }
+          : null;
+      }
       default:
         return { label: "Manual Entry" };
     }
@@ -509,12 +518,13 @@ router.get("/search-with-history", async (req, res) => {
              (h.balance_after - h.balance_before) AS net_change,
              h.source_type,
              CASE h.source_type
-               WHEN 'dc'     THEN 'Delivery Challan'
-               WHEN 'po'     THEN 'Purchase Order'
-               WHEN 'pr'     THEN 'Purchase Request'
-               WHEN 'sample' THEN 'Sample'
-               WHEN 'mir'    THEN 'MIR'
-               WHEN 'manual' THEN 'Manual Entry'
+               WHEN 'dc'           THEN 'Delivery Challan'
+               WHEN 'po'           THEN 'Purchase Order'
+               WHEN 'pr'           THEN 'Purchase Request'
+               WHEN 'sample'       THEN 'Sample'
+               WHEN 'mir'          THEN 'MIR'
+               WHEN 'manual'       THEN 'Manual Entry'
+               WHEN 'installation' THEN 'Installation'
                ELSE COALESCE(h.source_type, 'Unknown')
              END AS source_type_label,
              h.source_id,
@@ -546,6 +556,10 @@ router.get("/search-with-history", async (req, res) => {
 
              mir.mir_refrence_no   AS mir_ref_no,
 
+             inst.building_name    AS installation_building,
+             inst.site_name        AS installation_site,
+             inst.work_done        AS installation_work_done,
+
              -- ── Who / when ────────────────────────────────────
              h.project_id,
              h.project_name,
@@ -560,8 +574,9 @@ router.get("/search-with-history", async (req, res) => {
                WHEN h.source_type = 'dc'     THEN 'Received via DC: ' || COALESCE(dc.challan_number, '#' || h.source_id::text)
                WHEN h.source_type = 'po'     THEN 'From PO: '         || COALESCE(po.order_no,       '#' || h.source_id::text)
                WHEN h.source_type = 'pr'     THEN 'Issued to PR: '    || COALESCE(pr.pr_id::text,      '#' || h.source_id::text)
-               WHEN h.source_type = 'sample' THEN 'Used in Sample: '  || COALESCE(s.building_name,   '#' || h.source_id::text)
-               WHEN h.source_type = 'mir'    THEN 'MIR: '             || COALESCE(mir.mir_refrence_no,'#' || h.source_id::text)
+               WHEN h.source_type = 'sample'       THEN 'Used in Sample: '       || COALESCE(s.building_name,    '#' || h.source_id::text)
+               WHEN h.source_type = 'mir'          THEN 'MIR: '                  || COALESCE(mir.mir_refrence_no,'#' || h.source_id::text)
+               WHEN h.source_type = 'installation' THEN 'Used in Installation: ' || COALESCE(inst.building_name, '#' || h.source_id::text)
                WHEN h.change_type = 'created'THEN 'Item created'
                WHEN h.change_type = 'updated'THEN 'Metadata updated'
                ELSE COALESCE(h.source_ref, 'Manual entry')
@@ -578,6 +593,8 @@ router.get("/search-with-history", async (req, res) => {
                   ON h.source_type = 'sample' AND s.sample_id    = h.source_id
            LEFT JOIN mirs mir
                   ON h.source_type = 'mir'    AND mir.mir_id     = h.source_id
+           LEFT JOIN installations inst
+                  ON h.source_type = 'installation' AND inst.installation_id = h.source_id
            WHERE ${histWhere}
            ORDER BY h.created_at DESC
            LIMIT $${histIdx}`,
