@@ -20,6 +20,9 @@ const { pool } = require("../db");
 // Batched counts for many boq_ids at once — used to annotate a list of items
 // (e.g. a sample's item_description) with each item's total system-wide usage.
 // Returns { [boq_id]: { samples, installation, pr, po, itr, dc, mir, total } }
+// NOTE: `installation` is the SUM of installed quantity (boq_issued_qty, falling
+// back to quantity) against that BOQ item — not a count of installation lines.
+// (All other keys remain reference COUNTs, as before.)
 async function getBoqUsageCounts(boqIds) {
   const ids = [...new Set((boqIds || []).map(Number).filter(Boolean))];
   const out = {};
@@ -37,7 +40,12 @@ async function getBoqUsageCounts(boqIds) {
       [idsText]
     ),
     pool.query(
-      `SELECT elem->>'boq_id' AS boq_id, COUNT(*) AS cnt
+      `SELECT elem->>'boq_id' AS boq_id,
+              SUM(COALESCE(
+                NULLIF(elem->>'boq_issued_qty', '')::numeric,
+                NULLIF(elem->>'quantity', '')::numeric,
+                0
+              )) AS cnt
          FROM installations, jsonb_array_elements(item_description) elem
         WHERE elem->>'boq_id' = ANY($1::text[])
         GROUP BY 1`,
@@ -111,7 +119,11 @@ async function getBoqUsageDetails(boqId) {
     ),
     pool.query(
       `SELECT inst.installation_id, inst.building_name, inst.site_name, inst.project_id,
-              NULLIF(elem->>'boq_issued_qty', '')::numeric AS qty
+              COALESCE(
+                NULLIF(elem->>'boq_issued_qty', '')::numeric,
+                NULLIF(elem->>'quantity', '')::numeric,
+                0
+              ) AS qty
          FROM installations inst, jsonb_array_elements(inst.item_description) elem
         WHERE elem->>'boq_id' = $1`,
       [boqIdText]
@@ -153,6 +165,11 @@ async function getBoqUsageDetails(boqId) {
     ),
   ]);
 
+  // installation usage is a total installed QUANTITY (sum of qty across every
+  // installation line for this BOQ item), not a count of lines — everything
+  // else here stays a reference count.
+  const installationQty = installationsRes.rows.reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
+
   return {
     used_in_samples:      samplesRes.rows,
     used_in_installation: installationsRes.rows,
@@ -163,13 +180,13 @@ async function getBoqUsageDetails(boqId) {
     used_in_mir:          mirRes.rows,
     usage_counts: {
       samples:      samplesRes.rowCount,
-      installation: installationsRes.rowCount,
+      installation: installationQty,
       pr:           prRes.rowCount,
       po:           poRes.rowCount,
       itr:          itrRes.rowCount,
       dc:           dcRes.rowCount,
       mir:          mirRes.rowCount,
-      total:        samplesRes.rowCount + installationsRes.rowCount + prRes.rowCount + poRes.rowCount + itrRes.rowCount + dcRes.rowCount + mirRes.rowCount,
+      total:        samplesRes.rowCount + installationQty + prRes.rowCount + poRes.rowCount + itrRes.rowCount + dcRes.rowCount + mirRes.rowCount,
     },
   };
 }
