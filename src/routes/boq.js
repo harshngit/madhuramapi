@@ -5,7 +5,7 @@ const fs = require("fs");
 const PDFParser = require("pdf2json");
 const { pool } = require("../db");
 const { logActivity } = require("./dashboard");
-const { getBoqUsageDetails } = require("../utils/boqUsage");
+const { getBoqUsageDetails, getBoqUsageCounts } = require("../utils/boqUsage");
 
 const router = express.Router();
 
@@ -1762,11 +1762,17 @@ router.get("/project/:projectId", async (req, res) => {
       (sum, r) => sum + (parseFloat(r.amount) || 0), 0
     );
 
+    const usageCounts = await getBoqUsageCounts(result.rows.map(r => r.boq_id));
+    const boqs = result.rows.map(r => ({
+      ...r,
+      usage_counts: usageCounts[r.boq_id] || { samples: 0, installation: 0, pr: 0, po: 0, itr: 0, dc: 0, mir: 0, total: 0 },
+    }));
+
     res.json({
       project_id: parseInt(projectId),
       total_items: result.rowCount,
       total_amount: parseFloat(totalAmount.toFixed(2)),
-      boqs: result.rows,
+      boqs,
     });
   } catch (err) {
     console.error("Error fetching project BOQs:", err);
@@ -1830,10 +1836,16 @@ router.get("/project/:projectId/items", async (req, res) => {
     if (result.rows.length === 0)
       return res.status(404).json({ error: "No BOQ items found for this project" });
 
+    const usageCounts = await getBoqUsageCounts(result.rows.map(r => r.boq_id));
+    const items = result.rows.map(r => ({
+      ...r,
+      usage_counts: usageCounts[r.boq_id] || { samples: 0, installation: 0, pr: 0, po: 0, itr: 0, dc: 0, mir: 0, total: 0 },
+    }));
+
     res.json({
       project_id: parseInt(projectId),
       total: result.rowCount,
-      items: result.rows,
+      items,
     });
   } catch (err) {
     console.error("Error fetching project BOQ items:", err);
