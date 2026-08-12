@@ -267,7 +267,44 @@ async function enrichWithBoqInfo(samples, { full = false } = {}) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/sample/upload
+// Uploads sample document(s) and returns their URLs — does NOT require a
+// sample_id. Call this first (before or independently of create/update), then
+// pass the returned filePaths into `sample_file` on POST /create-sample or
+// PUT /:id.
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/sample/upload:
+ *   post:
+ *     summary: Upload sample document(s) — no sample_id required, returns file URLs to use in `sample_file`
+ *     tags: [Sample]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *     responses:
+ *       200:
+ *         description: Files uploaded successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 filePaths:
+ *                   type: array
+ *                   items: { type: string }
+ *                   example: ["/uploads/sample/1699999999-123456789.pdf"]
+ *       400:
+ *         description: No file uploaded
+ */
 router.post("/upload", upload.array("file"), (req, res) => {
   if (!req.files || req.files.length === 0)
     return res.status(400).json({ error: "No files uploaded" });
@@ -339,6 +376,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                     boq_id:        { type: integer, example: 7,    description: "Link to a BOQ item (boqs.boq_id) this sample line was taken from" }
  *                     boq_issued_qty: { type: number, example: 100,  description: "Qty to consume from the BOQ item's remaining quantity (defaults to quantity)" }
  *               add_fields:       { type: array }
+ *               sample_file:      { type: array, items: { type: string }, description: "Array of file URLs — upload via POST /api/sample/upload first, then pass the returned filePaths here" }
  *           example:
  *             sample_id: "SAMPLE-001"
  *             project_id: 1
@@ -376,6 +414,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                 quantity: 20
  *                 value: 380.00
  *             add_fields: []
+ *             sample_file: ["/uploads/sample/1699999999-123456789.pdf"]
  *     responses:
  *       201:
  *         description: Sample created successfully; linked inventory/BOQ items auto-deducted
@@ -438,6 +477,7 @@ router.post("/create-sample", async (req, res) => {
       sample_id: frontend_sample_id,
       project_id, flats, building_name, site_name,
       location, work_done, item_description, add_fields,
+      sample_file, // array of file URLs (see POST /api/sample/upload)
     } = req.body;
 
     if (!frontend_sample_id) {
@@ -448,8 +488,8 @@ router.post("/create-sample", async (req, res) => {
     // Insert sample using the sample_id supplied by the frontend
     const result = await client.query(
       `INSERT INTO samples
-         (sample_id, project_id, flats, building_name, site_name, location, work_done, item_description, add_fields)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         (sample_id, project_id, flats, building_name, site_name, location, work_done, item_description, add_fields, sample_file)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
        RETURNING *`,
       [
         frontend_sample_id,
@@ -458,6 +498,7 @@ router.post("/create-sample", async (req, res) => {
         work_done,
         item_description ? JSON.stringify(item_description) : JSON.stringify([]),
         add_fields ? JSON.stringify(add_fields) : JSON.stringify([]),
+        sample_file ? JSON.stringify(sample_file) : JSON.stringify([]),
       ]
     );
 
