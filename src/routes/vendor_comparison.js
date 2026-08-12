@@ -24,7 +24,12 @@ const upload = multer({ storage });
  * @swagger
  * tags:
  *   name: VendorComparison
- *   description: Vendor Comparison management
+ *   description: |
+ *     Stage 1 of the vendor comparison workflow — create and edit a side-by-side
+ *     comparison of multiple vendors' pricelists for a PR. Once a vendor is
+ *     chosen, use the **VendorComparisonFinalize** endpoints (POST/GET/PUT
+ *     `/api/vendor-comparison-finalize`) to record the decision — that stage
+ *     updates the SAME underlying record (matched by project_id + pr_no).
  */
 
 /**
@@ -40,11 +45,9 @@ const upload = multer({ storage });
  *           type: integer
  *         pr_no:
  *           type: integer
- *         approved_vendor:
- *           type: integer
- *           description: Link to the chosen vendor from the pricelist (vendors.vendor_id)
- *         pricelist:
+ *         vendorlist:
  *           type: array
+ *           description: Stage 1 — one entry per vendor being compared, each with its own pricelist
  *           items:
  *             type: object
  *             properties:
@@ -52,28 +55,42 @@ const upload = multer({ storage });
  *                 type: integer
  *               vendor_name:
  *                 type: string
- *               item_no:
- *                 type: string
- *                 description: BOQ item number for this line (optional, same as boqs.item_code)
- *               item_code:
- *                 type: string
- *                 description: Item code / SKU for this line (optional)
- *               item_description:
- *                 type: string
- *               total_qty:
- *                 type: number
- *               rate:
- *                 type: number
- *               amount:
- *                 type: number
- *               discount:
- *                 type: number
- *               sgst:
- *                 type: number
- *               cgst:
- *                 type: number
+ *               pricelist:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     item_no:
+ *                       type: string
+ *                       description: BOQ item number for this line (optional, same as boqs.item_code)
+ *                     item_code:
+ *                       type: string
+ *                       description: Item code / SKU for this line (optional)
+ *                     item_description:
+ *                       type: string
+ *                     total_qty:
+ *                       type: number
+ *                     rate:
+ *                       type: number
+ *                     amount:
+ *                       type: number
+ *                     discount:
+ *                       type: number
+ *                     sgst:
+ *                       type: number
+ *                     cgst:
+ *                       type: number
+ *         approved_vendor:
+ *           type: integer
+ *           description: Set by Stage 2 (POST /api/vendor-comparison-finalize) — link to the chosen vendor (vendors.vendor_id)
+ *         pricelist:
+ *           type: array
+ *           description: Set by Stage 2 — the winning vendor's flat line items (see VendorComparisonFinalize schema)
+ *           items:
+ *             type: object
  *         upload_document:
  *           type: array
+ *           description: Set by Stage 2 — approval/supporting documents
  *           items:
  *             type: object
  *             properties:
@@ -142,7 +159,7 @@ router.post("/upload", upload.array("files"), (req, res) => {
  * @swagger
  * /api/vendor-comparison:
  *   post:
- *     summary: Create a new vendor comparison
+ *     summary: "Stage 1: Create a new vendor comparison (multiple vendors side by side)"
  *     tags: [VendorComparison]
  *     requestBody:
  *       required: true
@@ -150,53 +167,81 @@ router.post("/upload", upload.array("files"), (req, res) => {
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [project_id, pr_no, vendorlist]
  *             properties:
  *               project_id: { type: integer }
  *               pr_no: { type: integer }
- *               approved_vendor:
- *                 type: integer
- *                 description: Link to the chosen vendor from the pricelist (vendors.vendor_id)
- *               pricelist:
+ *               vendorlist:
  *                 type: array
  *                 items:
  *                   type: object
  *                   properties:
- *                     vendor_id: { type: integer }
+ *                     vendor_id: { type: string }
  *                     vendor_name: { type: string }
- *                     item_no: { type: string, description: "BOQ item number for this line (optional)" }
- *                     item_code: { type: string, description: "Item code / SKU for this line (optional)" }
- *                     item_description: { type: string }
- *                     total_qty: { type: number }
- *                     rate: { type: number }
- *                     amount: { type: number }
- *                     discount: { type: number }
- *                     sgst: { type: number }
- *                     cgst: { type: number }
- *               upload_document:
- *                 type: array
- *                 items:
- *                   type: object
- *                   properties:
- *                     file_name: { type: string }
- *                     file_url: { type: string }
+ *                     pricelist:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           item_no: { type: string, description: "BOQ item number for this line (optional)" }
+ *                           item_code: { type: string, description: "Item code / SKU for this line (optional)" }
+ *                           item_description: { type: string }
+ *                           total_qty: { type: number }
+ *                           rate: { type: number }
+ *                           amount: { type: number }
+ *                           discount: { type: number }
+ *                           sgst: { type: number }
+ *                           cgst: { type: number }
+ *           example:
+ *             project_id: 1
+ *             pr_no: 5
+ *             vendorlist:
+ *               - vendor_id: "12"
+ *                 vendor_name: "ABC Traders"
+ *                 pricelist:
+ *                   - item_no: "1.01.3"
+ *                     item_code: "995468"
+ *                     item_description: "Cables Supply, laying, testing..."
+ *                     total_qty: 20
+ *                     rate: 210
+ *                     amount: 4200
+ *                     discount: 0
+ *                     sgst: 9
+ *                     cgst: 9
+ *               - vendor_id: "18"
+ *                 vendor_name: "XYZ Suppliers"
+ *                 pricelist:
+ *                   - item_no: "1.01.3"
+ *                     item_code: "995468"
+ *                     item_description: "Cables Supply, laying, testing..."
+ *                     total_qty: 20
+ *                     rate: 198
+ *                     amount: 3960
+ *                     discount: 0
+ *                     sgst: 9
+ *                     cgst: 9
  *     responses:
  *       201:
  *         description: Created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/VendorComparison'
+ *       400:
+ *         description: Invalid project_id or pr_no
  */
 router.post("/", async (req, res) => {
   try {
-    const { project_id, pr_no, approved_vendor, pricelist, upload_document, user_id, user_name } = req.body;
+    const { project_id, pr_no, vendorlist, user_id, user_name } = req.body;
 
     const result = await pool.query(
-      `INSERT INTO vendor_comparisons (project_id, pr_no, approved_vendor, pricelist, upload_document)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO vendor_comparisons (project_id, pr_no, vendorlist)
+       VALUES ($1, $2, $3)
        RETURNING *`,
       [
         project_id,
         pr_no,
-        approved_vendor || null,
-        JSON.stringify(pricelist || []),
-        JSON.stringify(upload_document || [])
+        JSON.stringify(vendorlist || []),
       ]
     );
 
@@ -217,8 +262,6 @@ router.post("/", async (req, res) => {
     console.error("Error creating vendor comparison:", error);
     if (error.code === "23503" && error.constraint === "vendor_comparisons_pr_no_fkey")
       return res.status(400).json({ error: "Invalid pr_no: no Purchase Requisition with that internal pr_id exists" });
-    if (error.code === "23503" && error.constraint === "vendor_comparisons_approved_vendor_fkey")
-      return res.status(400).json({ error: "Invalid approved_vendor: no vendor with that vendor_id exists" });
     if (error.code === "23503")
       return res.status(400).json({ error: "Invalid project_id: Project does not exist" });
     res.status(500).json({ error: "Internal Server Error" });
@@ -288,6 +331,49 @@ router.get("/", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/vendor-comparison/project/:projectId
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/vendor-comparison/project/{projectId}:
+ *   get:
+ *     summary: Get all vendor comparisons for a specific project
+ *     tags: [VendorComparison]
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of vendor comparisons for the project
+ *       404:
+ *         description: No vendor comparisons found for this project
+ */
+router.get("/project/:projectId", async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const result = await pool.query(
+      `SELECT vc.*, pr.project_name as pr_name, v.vendor_name as approved_vendor_name
+         FROM vendor_comparisons vc
+         LEFT JOIN purchase_requisitions pr ON vc.pr_no = pr.pr_id
+         LEFT JOIN vendors v ON vc.approved_vendor = v.vendor_id
+        WHERE vc.project_id = $1
+        ORDER BY vc.created_at DESC`,
+      [projectId]
+    );
+
+    if (result.rows.length === 0)
+      return res.status(404).json({ error: "No vendor comparisons found for this project" });
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching vendor comparisons by project:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/vendor-comparison/:id
 // ─────────────────────────────────────────────────────────────────────────────
 /**
@@ -333,7 +419,11 @@ router.get("/:id", async (req, res) => {
  * @swagger
  * /api/vendor-comparison/{id}:
  *   put:
- *     summary: Update a vendor comparison
+ *     summary: "Stage 1: Update a vendor comparison's pr_no / vendorlist"
+ *     description: |
+ *       Only touches pr_no and vendorlist. To record the chosen vendor
+ *       (approved_vendor / pricelist / upload_document), use
+ *       PUT /api/vendor-comparison-finalize/{id} instead.
  *     tags: [VendorComparison]
  *     parameters:
  *       - in: path
@@ -347,11 +437,17 @@ router.get("/:id", async (req, res) => {
  *             type: object
  *             properties:
  *               pr_no: { type: integer }
- *               approved_vendor:
- *                 type: integer
- *                 description: Link to the chosen vendor from the pricelist (vendors.vendor_id)
- *               pricelist: { type: array, items: { type: object } }
- *               upload_document: { type: array, items: { type: object } }
+ *               vendorlist:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     vendor_id: { type: string }
+ *                     vendor_name: { type: string }
+ *                     pricelist:
+ *                       type: array
+ *                       items:
+ *                         type: object
  *     responses:
  *       200:
  *         description: Updated
@@ -361,22 +457,18 @@ router.get("/:id", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { pr_no, approved_vendor, pricelist, upload_document, user_id, user_name } = req.body;
+    const { pr_no, vendorlist, user_id, user_name } = req.body;
 
     const result = await pool.query(
       `UPDATE vendor_comparisons SET
          pr_no = COALESCE($1, pr_no),
-         approved_vendor = COALESCE($2, approved_vendor),
-         pricelist = COALESCE($3, pricelist),
-         upload_document = COALESCE($4, upload_document),
+         vendorlist = COALESCE($2, vendorlist),
          updated_at = CURRENT_TIMESTAMP
-       WHERE comparison_id = $5
+       WHERE comparison_id = $3
        RETURNING *`,
       [
         pr_no || null,
-        approved_vendor || null,
-        pricelist ? JSON.stringify(pricelist) : null,
-        upload_document ? JSON.stringify(upload_document) : null,
+        vendorlist ? JSON.stringify(vendorlist) : null,
         id
       ]
     );
@@ -402,8 +494,6 @@ router.put("/:id", async (req, res) => {
     console.error("Error updating vendor comparison:", error);
     if (error.code === "23503" && error.constraint === "vendor_comparisons_pr_no_fkey")
       return res.status(400).json({ error: "Invalid pr_no: no Purchase Requisition with that internal pr_id exists" });
-    if (error.code === "23503" && error.constraint === "vendor_comparisons_approved_vendor_fkey")
-      return res.status(400).json({ error: "Invalid approved_vendor: no vendor with that vendor_id exists" });
     res.status(500).json({ error: "Internal Server Error" });
   }
 });

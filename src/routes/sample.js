@@ -421,7 +421,7 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                       boq_used_quantity:  { type: number, description: "Total quantity consumed so far on the linked BOQ item (boqs.used_quantity)" }
  *                       boq_remaining_quantity: { type: number, description: "Remaining quantity left on the linked BOQ item after this consumption" }
  *                 add_fields:       { type: array }
- *                 sample_file:      { type: string }
+ *                 sample_file:      { type: array, items: { type: string }, description: "Array of file URLs (see POST /api/sample/upload)" }
  *                 created_at:       { type: string, format: date-time }
  *                 updated_at:       { type: string, format: date-time }
  *       400:
@@ -772,7 +772,7 @@ router.get("/:id", async (req, res) => {
  *                     boq_id:         { type: integer, example: 7,  description: "Link to a BOQ item (boqs.boq_id) this sample line was taken from" }
  *                     boq_issued_qty: { type: number,  example: 100, description: "Qty to consume from the BOQ item's remaining quantity (defaults to quantity)" }
  *               add_fields:       { type: array }
- *               sample_file:      { type: string }
+ *               sample_file:      { type: array, items: { type: string }, description: "Array of file URLs (see POST /api/sample/upload) — replaces the previous single string" }
  *               project_name:     { type: string, description: "Used for movement/history logging only" }
  *               user_id:          { type: string, description: "Who is making this update" }
  *               user_name:        { type: string }
@@ -860,7 +860,7 @@ router.get("/:id", async (req, res) => {
  *                       boq_used_quantity:  { type: number, description: "Total quantity consumed so far on the linked BOQ item (boqs.used_quantity)" }
  *                       boq_remaining_quantity: { type: number, description: "Remaining quantity left on the linked BOQ item after this consumption" }
  *                 add_fields:       { type: array }
- *                 sample_file:      { type: string }
+ *                 sample_file:      { type: array, items: { type: string }, description: "Array of file URLs (see POST /api/sample/upload)" }
  *                 created_at:       { type: string, format: "date-time" }
  *                 updated_at:       { type: string, format: "date-time" }
  *       400:
@@ -878,7 +878,8 @@ router.put("/:id", async (req, res) => {
     const { id } = req.params;
     const {
       flats, building_name, site_name, location,
-      work_done, item_description, add_fields, sample_file,
+      work_done, item_description, add_fields,
+      sample_file, // now an ARRAY of file URLs (matches POST /api/sample/upload's filePaths[])
     } = req.body;
 
     // Fetch existing sample to detect previously-issued items
@@ -932,7 +933,7 @@ router.put("/:id", async (req, res) => {
         work_done || null,
         newItems ? JSON.stringify(newItems) : null,
         add_fields ? JSON.stringify(add_fields) : null,
-        sample_file || null,
+        sample_file ? JSON.stringify(sample_file) : null,
         id,
       ]
     );
