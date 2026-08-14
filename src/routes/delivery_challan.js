@@ -141,6 +141,53 @@ router.post("/upload", upload.single("file"), (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /api/dc/upload-invoice
+// Uploads the invoice document — does NOT require a dc_id. Call this first,
+// then pass the returned filePath into `invoice_upload` on POST / or PUT /:id.
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/dc/upload-invoice:
+ *   post:
+ *     summary: Upload an invoice document — no dc_id required, returns the file URL to use in `invoice_upload`
+ *     tags: [DeliveryChallan]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file: { type: string, format: binary }
+ *     responses:
+ *       200:
+ *         description: Invoice uploaded
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 filePath: { type: string, example: "/uploads/dc/invoice-1699999999-123456789.pdf" }
+ *       400:
+ *         description: No file uploaded
+ */
+router.post("/upload-invoice", upload.single("file"), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+  const filePath = `/uploads/dc/${req.file.filename}`;
+  res.json({ filePath });
+
+  if (req.body.user_id) {
+    logActivity({
+      action: "uploaded", entity_type: "dc_invoice_file",
+      entity_id: null, entity_name: req.file.originalname,
+      performed_by: req.body.user_id, performed_by_name: req.body.user_name || null,
+      meta: { filePath },
+    });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/dc  – Create Delivery Challan + auto-sync items to inventory
 // ─────────────────────────────────────────────────────────────────────────────
 /**
@@ -163,6 +210,8 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *               po_id:            { type: integer }
  *               po_number:        { type: string }
  *               challan_number:   { type: string }
+ *               invoice_number:   { type: string, description: "Vendor invoice number for this DC" }
+ *               invoice_upload:   { type: string, description: "Invoice file URL — upload via POST /api/dc/upload-invoice first, then pass the returned filePath here" }
  *               items:
  *                 type: array
  *                 items:
@@ -198,7 +247,7 @@ router.post("/", async (req, res) => {
     const {
       project_id, project_name, sample_id,
       po_id, po_number,
-      challan_number, items,
+      challan_number, invoice_number, invoice_upload, items,
       challan_date, work_order_number, order_date,
       auto_sync_inventory = true,   // ← default true; pass false to skip
       user_id, user_name,
@@ -240,8 +289,9 @@ router.post("/", async (req, res) => {
       `INSERT INTO delivery_challans
          (project_id, po_id, po_number, challan_number, items, challan_date,
           work_order_number, order_date, total_po_items, total_challan_items,
-          status, inventory_synced, inventory_synced_at, sample_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+          status, inventory_synced, inventory_synced_at, sample_id,
+          invoice_number, invoice_upload)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        RETURNING *`,
       [
         project_id, resolved_po_id || null, po_number || null,
@@ -251,6 +301,7 @@ router.post("/", async (req, res) => {
         auto_sync_inventory ? true : false,
         auto_sync_inventory ? new Date() : null,
         sample_id || null,
+        invoice_number || null, invoice_upload || null,
       ]
     );
 
@@ -483,6 +534,8 @@ router.get("/sample/:sampleId", async (req, res) => {
  *                 po_id:                { type: integer, nullable: true, example: 8 }
  *                 po_number:            { type: string, nullable: true, example: "PO-2026-001" }
  *                 challan_number:       { type: string, example: "DC-2026-001" }
+ *                 invoice_number:       { type: string, nullable: true, example: "INV-2026-0456" }
+ *                 invoice_upload:       { type: string, nullable: true, example: "/uploads/dc/invoice-1699999999-123456789.pdf" }
  *                 sample_id:            { type: string, nullable: true, example: "SAMPLE-001" }
  *                 items:
  *                   type: array
@@ -546,6 +599,23 @@ router.get("/:id", async (req, res) => {
  *         name: id
  *         required: true
  *         schema: { type: integer }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               project_id:        { type: integer }
+ *               po_id:             { type: integer }
+ *               po_number:         { type: string }
+ *               challan_number:    { type: string }
+ *               invoice_number:    { type: string, description: "Vendor invoice number for this DC" }
+ *               invoice_upload:    { type: string, description: "Invoice file URL — upload via POST /api/dc/upload-invoice first, then pass the returned filePath here" }
+ *               sample_id:         { type: string }
+ *               items:             { type: array, items: { type: object } }
+ *               challan_date:      { type: string, format: date }
+ *               work_order_number: { type: string }
+ *               order_date:        { type: string, format: date }
  *     responses:
  *       200:
  *         description: Updated
@@ -556,6 +626,7 @@ router.put("/:id", async (req, res) => {
   const { id } = req.params;
   const {
     project_id, po_id, po_number, challan_number, sample_id,
+    invoice_number, invoice_upload,
     items, challan_date, work_order_number, order_date,
   } = req.body;
 
@@ -598,13 +669,16 @@ router.put("/:id", async (req, res) => {
          total_challan_items = $10,
          status              = $11,
          sample_id           = COALESCE($12, sample_id),
+         invoice_number       = COALESCE($13, invoice_number),
+         invoice_upload       = COALESCE($14, invoice_upload),
          updated_at          = CURRENT_TIMESTAMP
-       WHERE dc_id = $13 RETURNING *`,
+       WHERE dc_id = $15 RETURNING *`,
       [
         project_id || null, po_id || null, po_number || null, challan_number || null,
         items ? JSON.stringify(items) : null,
         challan_date || null, work_order_number || null, order_date || null,
-        total_po_items, total_challan_items, status, sample_id || null, id,
+        total_po_items, total_challan_items, status, sample_id || null,
+        invoice_number || null, invoice_upload || null, id,
       ]
     );
 
