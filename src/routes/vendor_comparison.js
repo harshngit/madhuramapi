@@ -80,6 +80,8 @@ const upload = multer({ storage });
  *                       type: number
  *                     cgst:
  *                       type: number
+ *                     payment_terms:
+ *                       type: string
  *         approved_vendor:
  *           type: integer
  *           description: Set by Stage 2 (POST /api/vendor-comparison-finalize) — link to the chosen vendor (vendors.vendor_id)
@@ -192,6 +194,7 @@ router.post("/upload", upload.array("files"), (req, res) => {
  *                           discount: { type: number }
  *                           sgst: { type: number }
  *                           cgst: { type: number }
+ *                           payment_terms: { type: string }
  *           example:
  *             project_id: 1
  *             pr_no: 5
@@ -208,6 +211,7 @@ router.post("/upload", upload.array("files"), (req, res) => {
  *                     discount: 0
  *                     sgst: 9
  *                     cgst: 9
+ *                     payment_terms: "50% advance, 50% on delivery"
  *               - vendor_id: "18"
  *                 vendor_name: "XYZ Suppliers"
  *                 pricelist:
@@ -220,6 +224,7 @@ router.post("/upload", upload.array("files"), (req, res) => {
  *                     discount: 0
  *                     sgst: 9
  *                     cgst: 9
+ *                     payment_terms: "100% within 30 days of delivery"
  *     responses:
  *       201:
  *         description: Created
@@ -448,6 +453,17 @@ router.get("/:id", async (req, res) => {
  *                       type: array
  *                       items:
  *                         type: object
+ *                         properties:
+ *                           item_no: { type: string }
+ *                           item_code: { type: string }
+ *                           item_description: { type: string }
+ *                           total_qty: { type: number }
+ *                           rate: { type: number }
+ *                           amount: { type: number }
+ *                           discount: { type: number }
+ *                           sgst: { type: number }
+ *                           cgst: { type: number }
+ *                           payment_terms: { type: string }
  *     responses:
  *       200:
  *         description: Updated

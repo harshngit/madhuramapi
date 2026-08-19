@@ -57,6 +57,7 @@ const { logActivity } = require("./dashboard");
  *               discount: { type: number }
  *               sgst: { type: number }
  *               cgst: { type: number }
+ *               payment_terms: { type: string }
  *         upload_document:
  *           type: array
  *           items:
@@ -115,6 +116,7 @@ const { logActivity } = require("./dashboard");
  *                     discount: { type: number }
  *                     sgst: { type: number }
  *                     cgst: { type: number }
+ *                     payment_terms: { type: string }
  *               upload_document:
  *                 type: array
  *                 items:
@@ -138,6 +140,7 @@ const { logActivity } = require("./dashboard");
  *                 discount: 0
  *                 sgst: 9
  *                 cgst: 9
+ *                 payment_terms: "50% advance, 50% on delivery"
  *             upload_document:
  *               - file_name: "approval.pdf"
  *                 file_url: "/uploads/vendor_comparison/approval-123.pdf"
@@ -339,7 +342,23 @@ router.get("/:id", async (req, res) => {
  *             type: object
  *             properties:
  *               approved_vendor: { type: integer }
- *               pricelist: { type: array, items: { type: object } }
+ *               pricelist:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     vendor_id: { type: integer }
+ *                     vendor_name: { type: string }
+ *                     item_no: { type: string }
+ *                     item_code: { type: string }
+ *                     item_description: { type: string }
+ *                     total_qty: { type: number }
+ *                     rate: { type: number }
+ *                     amount: { type: number }
+ *                     discount: { type: number }
+ *                     sgst: { type: number }
+ *                     cgst: { type: number }
+ *                     payment_terms: { type: string }
  *               upload_document: { type: array, items: { type: object } }
  *     responses:
  *       200:
