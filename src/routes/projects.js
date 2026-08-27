@@ -3,7 +3,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const { pool } = require("../db");
-const { logActivity } = require("./dashboard"); // adjust path if needed
+const { logActivity, getEntityHistory } = require("./dashboard"); // adjust path if needed
 
 
 const router = express.Router();
@@ -628,8 +628,44 @@ logActivity({
 });
   } catch (error) {
     console.error("Delete project error:", error);
-    
+
     res.status(500).json({ error: "Failed to delete project" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/projects/:id/history — who created/updated/deleted this project, and when
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/projects/{id}/history:
+ *   get:
+ *     summary: Get the create/update/delete history for a project (who did what, and when)
+ *     tags: [Projects]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Activity history for this project
+ */
+router.get("/:id/history", async (req, res) => {
+  try {
+    const data = await getEntityHistory("project", req.params.id, {
+      limit: req.query.limit, offset: req.query.offset,
+    });
+    res.json(data);
+  } catch (error) {
+    console.error("Error fetching project history:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

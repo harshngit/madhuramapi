@@ -1,6 +1,6 @@
 const express = require("express");
 const { pool } = require("../db");
-const { logActivity } = require("./dashboard");
+const { logActivity, getEntityHistory } = require("./dashboard");
 
 const router = express.Router();
 
@@ -697,6 +697,42 @@ router.delete("/:id", async (req, res) => {
     res.json({ message: "Invoice deleted successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/hiranandani-invoice/:id/history — who created/updated/deleted this invoice, and when
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/hiranandani-invoice/{id}/history:
+ *   get:
+ *     summary: Get the create/update/delete history for a Hiranandani invoice (who did what, and when)
+ *     tags: [Hiranandani Invoice]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Activity history for this invoice
+ */
+router.get("/:id/history", async (req, res) => {
+  try {
+    const data = await getEntityHistory("hiranandani_invoice", req.params.id, {
+      limit: req.query.limit, offset: req.query.offset,
+    });
+    res.json(data);
+  } catch (err) {
+    console.error("Error fetching Hiranandani invoice history:", err);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

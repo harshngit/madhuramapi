@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { pool } = require("../db");
-const { logActivity } = require("./dashboard");
+const { logActivity, getEntityHistory } = require("./dashboard");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
@@ -908,6 +908,42 @@ router.patch("/:id/status", async (req, res) => {
   } catch (error) {
     console.error("Error updating price list status:", error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/vendor-price-list/:id/history — who created/updated/deleted this price list, and when
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/vendor-price-list/{id}/history:
+ *   get:
+ *     summary: Get the create/update/delete history for a vendor price list (who did what, and when)
+ *     tags: [Vendor Price List]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Activity history for this price list
+ */
+router.get("/:id/history", async (req, res) => {
+  try {
+    const data = await getEntityHistory("price_list", req.params.id, {
+      limit: req.query.limit, offset: req.query.offset,
+    });
+    res.json(data);
+  } catch (error) {
+    console.error("Error fetching price list history:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

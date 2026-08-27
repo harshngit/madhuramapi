@@ -12,7 +12,14 @@
  *   GET    /api/dashboard/activity                  — all activity (paginated)
  *   GET    /api/dashboard/activity?user_id=X        — by user
  *   GET    /api/dashboard/activity?project_id=X     — by project
+ *   GET    /api/dashboard/activity?entity_type=X&entity_id=Y — full history for one record
  *   DELETE /api/dashboard/activity/:id              — delete one entry
+ *
+ *  Every section (PR, PO, Sample, Installation, DC, BOQ, Vendor, Vendor
+ *  Comparison, MIR, ITR, Quotation, invoices, price list, Projects,
+ *  Attendance, Leave) also exposes GET /<section>/:id/history as a
+ *  discoverable convenience wrapper around the same activity_log data via
+ *  the getEntityHistory() helper exported below.
  *
  *  NOTIFICATIONS
  *   GET    /api/dashboard/notifications?user_id=X          — get user notifications
@@ -108,6 +115,37 @@ function logActivity({
       }).catch((e) => console.error("Push notification error:", e.message));
     })
     .catch((err) => console.error("Activity log error:", err.message));
+}
+
+// ─── getEntityHistory — shared by every section's GET /:id/history route ──────
+// Returns the full created/updated/deleted trail (who + when) for one record,
+// scoped by entity_type (matching what that section passes to logActivity)
+// and entity_id (the record's id, string-compared so alphanumeric ids like
+// sample_id/installation_id work the same as numeric ones).
+async function getEntityHistory(entityType, entityId, { limit = 50, offset = 0 } = {}) {
+  const safeLimit  = Math.min(Math.max(parseInt(limit)  || 50, 1), 200);
+  const safeOffset = Math.max(parseInt(offset) || 0, 0);
+
+  const [rows, countResult] = await Promise.all([
+    pool.query(
+      `SELECT * FROM activity_log
+        WHERE entity_type = $1 AND entity_id = $2
+        ORDER BY created_at DESC
+        LIMIT $3 OFFSET $4`,
+      [entityType, String(entityId), safeLimit, safeOffset]
+    ),
+    pool.query(
+      `SELECT COUNT(*) FROM activity_log WHERE entity_type = $1 AND entity_id = $2`,
+      [entityType, String(entityId)]
+    ),
+  ]);
+
+  return {
+    total:   parseInt(countResult.rows[0].count),
+    limit:   safeLimit,
+    offset:  safeOffset,
+    history: rows.rows,
+  };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -253,6 +291,11 @@ router.get("/stats", async (req, res) => {
  *           type: string
  *         description: "vendor | po | sample | mir | itr | project | user"
  *       - in: query
+ *         name: entity_id
+ *         schema:
+ *           type: string
+ *         description: "Combine with entity_type to get the full history for one specific record"
+ *       - in: query
  *         name: action
  *         schema:
  *           type: string
@@ -276,6 +319,7 @@ router.get("/activity", async (req, res) => {
     const user_id    = req.query.user_id    || null;
     const project_id = req.query.project_id || null;
     const entityType = req.query.entity_type || null;
+    const entityId   = req.query.entity_id   || null;
     const action     = req.query.action      || null;
 
     const conditions = [];
@@ -284,6 +328,7 @@ router.get("/activity", async (req, res) => {
     if (user_id)    { values.push(user_id);    conditions.push(`performed_by = $${values.length}`); }
     if (project_id) { values.push(project_id); conditions.push(`project_id = $${values.length}`); }
     if (entityType) { values.push(entityType); conditions.push(`entity_type = $${values.length}`); }
+    if (entityId)   { values.push(entityId);   conditions.push(`entity_id = $${values.length}`); }
     if (action)     { values.push(action);     conditions.push(`action = $${values.length}`); }
 
     const where       = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -553,6 +598,7 @@ function wsHandler(ws) {
 module.exports = {
   router,
   logActivity,
+  getEntityHistory,
   wsHandler,
   broadcast
 };

@@ -4,7 +4,7 @@ const path = require("path");
 const fs = require("fs");
 const PDFParser = require("pdf2json");
 const { pool } = require("../db");
-const { logActivity } = require("./dashboard");
+const { logActivity, getEntityHistory } = require("./dashboard");
 const { getBoqUsageDetails, getBoqUsageCounts } = require("../utils/boqUsage");
 
 const router = express.Router();
@@ -2154,6 +2154,42 @@ router.delete("/:id", async (req, res) => {
     });
   } catch (err) {
     console.error("Error deleting BOQ:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/boq/:id/history — who created/updated/deleted this BOQ item, and when
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/boq/{id}/history:
+ *   get:
+ *     summary: Get the create/update/delete history for a BOQ item (who did what, and when)
+ *     tags: [BOQ]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Activity history for this BOQ item
+ */
+router.get("/:id/history", async (req, res) => {
+  try {
+    const data = await getEntityHistory("boq", req.params.id, {
+      limit: req.query.limit, offset: req.query.offset,
+    });
+    res.json(data);
+  } catch (err) {
+    console.error("Error fetching BOQ history:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });

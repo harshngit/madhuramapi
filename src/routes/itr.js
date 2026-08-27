@@ -4,7 +4,7 @@ const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
-const { logActivity } = require("./dashboard");
+const { logActivity, getEntityHistory } = require("./dashboard");
 
 // ─── Upload Directory Setup ───────────────────────────────────────────────────
 const uploadDir = path.join(__dirname, "../../uploads/itr");
@@ -737,6 +737,42 @@ router.delete("/:id", async (req, res) => {
   } catch (error) {
     console.error("Error deleting ITR:", error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/itr/:id/history — who created/updated/deleted this ITR, and when
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/itr/{id}/history:
+ *   get:
+ *     summary: Get the create/update/delete history for an ITR (who did what, and when)
+ *     tags: [ITR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Activity history for this ITR
+ */
+router.get("/:id/history", async (req, res) => {
+  try {
+    const data = await getEntityHistory("itr", req.params.id, {
+      limit: req.query.limit, offset: req.query.offset,
+    });
+    res.json(data);
+  } catch (error) {
+    console.error("Error fetching ITR history:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

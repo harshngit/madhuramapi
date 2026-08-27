@@ -4,7 +4,7 @@ const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
-const { logActivity } = require("./dashboard");
+const { logActivity, getEntityHistory } = require("./dashboard");
 
 // ─── Upload Directory Setup ───────────────────────────────────────────────────
 const uploadDir = path.join(__dirname, "../../uploads/attendance");
@@ -1150,6 +1150,42 @@ router.delete("/:id", async (req, res) => {
   } catch (error) {
     console.error("Delete attendance error:", error);
     res.status(500).json({ error: "Failed to delete attendance record" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/attendance/:id/history — who created/updated/deleted this record, and when
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/attendance/{id}/history:
+ *   get:
+ *     summary: Get the create/update/delete history for an attendance record (who did what, and when)
+ *     tags: [Attendance]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Activity history for this attendance record
+ */
+router.get("/:id/history", async (req, res) => {
+  try {
+    const data = await getEntityHistory("attendance", req.params.id, {
+      limit: req.query.limit, offset: req.query.offset,
+    });
+    res.json(data);
+  } catch (error) {
+    console.error("Error fetching attendance history:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

@@ -4,7 +4,7 @@ const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
-const { logActivity } = require("./dashboard");
+const { logActivity, getEntityHistory } = require("./dashboard");
 const { recordMovement } = require("./inventory"); // stock-out AND stock-in helper
 const { getBoqUsageCounts, getBoqUsageDetails } = require("../utils/boqUsage");
 
@@ -1232,6 +1232,42 @@ router.delete("/project/:projectId", async (req, res) => {
     res.status(500).json({ error: "Internal Server Error" });
   } finally {
     client.release();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/sample/:id/history — who created/updated/deleted this sample, and when
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/sample/{id}/history:
+ *   get:
+ *     summary: Get the create/update/delete history for a sample (who did what, and when)
+ *     tags: [Sample]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Activity history for this sample
+ */
+router.get("/:id/history", async (req, res) => {
+  try {
+    const data = await getEntityHistory("sample", req.params.id, {
+      limit: req.query.limit, offset: req.query.offset,
+    });
+    res.json(data);
+  } catch (error) {
+    console.error("Error fetching sample history:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

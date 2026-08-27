@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { pool } = require("../db");
-const { logActivity } = require("./dashboard");
+const { logActivity, getEntityHistory } = require("./dashboard");
 const { recordMovement } = require("./inventory"); // stock-out AND stock-in helper
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -790,6 +790,42 @@ router.delete("/project/:projectId", async (req, res) => {
     res.status(500).json({ error: "Internal Server Error" });
   } finally {
     client.release();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/installation/:id/history — who created/updated/deleted this installation, and when
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/installation/{id}/history:
+ *   get:
+ *     summary: Get the create/update/delete history for an installation (who did what, and when)
+ *     tags: [Installation]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Activity history for this installation
+ */
+router.get("/:id/history", async (req, res) => {
+  try {
+    const data = await getEntityHistory("installation", req.params.id, {
+      limit: req.query.limit, offset: req.query.offset,
+    });
+    res.json(data);
+  } catch (error) {
+    console.error("Error fetching installation history:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

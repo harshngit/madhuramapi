@@ -6,7 +6,7 @@ const path = require("path");
 const fs = require("fs");
 const nodemailer = require("nodemailer");
 const { generatePrPdf } = require("../utils/pr_pdf");
-const { logActivity } = require("./dashboard");
+const { logActivity, getEntityHistory } = require("./dashboard");
 const { generateEmailTemplate, formatCurrency, formatDate } = require("../utils/emailHelper");
 const { recordMovement } = require("./inventory"); // ← stock-out helper
 
@@ -682,6 +682,42 @@ router.delete("/:id", async (req, res) => {
     res.status(500).json({ error: error.message });
   } finally {
     client.release();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/pr/:id/history — who created/updated/deleted this PR, and when
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/pr/{id}/history:
+ *   get:
+ *     summary: Get the create/update/delete history for a PR (who did what, and when)
+ *     tags: [PR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Activity history for this PR
+ */
+router.get("/:id/history", async (req, res) => {
+  try {
+    const data = await getEntityHistory("pr", req.params.id, {
+      limit: req.query.limit, offset: req.query.offset,
+    });
+    res.json(data);
+  } catch (error) {
+    console.error("Error fetching PR history:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

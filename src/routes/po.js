@@ -6,7 +6,7 @@ const path = require("path");
 const fs = require("fs");
 const nodemailer = require("nodemailer");
 const { generatePOPdf } = require("../utils/po_pdf");
-const { logActivity } = require("./dashboard");
+const { logActivity, getEntityHistory } = require("./dashboard");
 const { generateEmailTemplate, formatCurrency, formatDate } = require("../utils/emailHelper");
 const { recordMovement } = require("./inventory"); // ← NEW: needed for inventory restore on delete
 
@@ -1135,6 +1135,42 @@ router.get("/:id/email-logs", async (req, res) => {
   } catch (error) {
     console.error("Error fetching PO logs:", error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/po/:id/history — who created/updated/deleted this PO, and when
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/po/{id}/history:
+ *   get:
+ *     summary: Get the create/update/delete history for a PO (who did what, and when)
+ *     tags: [PO]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Activity history for this PO
+ */
+router.get("/:id/history", async (req, res) => {
+  try {
+    const data = await getEntityHistory("po", req.params.id, {
+      limit: req.query.limit, offset: req.query.offset,
+    });
+    res.json(data);
+  } catch (error) {
+    console.error("Error fetching PO history:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

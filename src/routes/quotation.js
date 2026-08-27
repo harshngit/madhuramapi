@@ -5,7 +5,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const XLSX = require("xlsx");
-const { logActivity } = require("./dashboard");
+const { logActivity, getEntityHistory } = require("./dashboard");
 const {
   recalculateItems,
   buildAddonKeys,
@@ -1360,6 +1360,42 @@ router.patch("/:id/status", async (req, res) => {
   } catch (err) {
     console.error("Update status error:", err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/quotations/:id/history — who created/updated/deleted this quotation, and when
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/quotations/{id}/history:
+ *   get:
+ *     summary: Get the create/update/delete history for a quotation (who did what, and when)
+ *     tags: [Quotations]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Activity history for this quotation
+ */
+router.get("/:id/history", async (req, res) => {
+  try {
+    const data = await getEntityHistory("quotation", req.params.id, {
+      limit: req.query.limit, offset: req.query.offset,
+    });
+    res.json(data);
+  } catch (err) {
+    console.error("Error fetching quotation history:", err);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

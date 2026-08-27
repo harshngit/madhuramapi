@@ -3,7 +3,7 @@ const router = express.Router();
 const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
-const { logActivity } = require("./dashboard");
+const { logActivity, getEntityHistory } = require("./dashboard");
 const fs = require("fs");
 const { recordMovement } = require("./inventory"); // ← new import
 const { stampInventoryChain } = require("./inventory_trace");
@@ -748,6 +748,42 @@ router.delete("/:id", async (req, res) => {
   } catch (err) {
     console.error("Error deleting DC:", err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/dc/:id/history — who created/updated/deleted this DC, and when
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/dc/{id}/history:
+ *   get:
+ *     summary: Get the create/update/delete history for a Delivery Challan (who did what, and when)
+ *     tags: [DeliveryChallan]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Activity history for this Delivery Challan
+ */
+router.get("/:id/history", async (req, res) => {
+  try {
+    const data = await getEntityHistory("delivery_challan", req.params.id, {
+      limit: req.query.limit, offset: req.query.offset,
+    });
+    res.json(data);
+  } catch (err) {
+    console.error("Error fetching DC history:", err);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

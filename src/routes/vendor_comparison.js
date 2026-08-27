@@ -4,7 +4,7 @@ const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
-const { logActivity } = require("./dashboard");
+const { logActivity, getEntityHistory } = require("./dashboard");
 
 // Ensure upload directory exists
 const uploadDir = path.join(__dirname, "../../uploads/vendor_comparison");
@@ -562,6 +562,42 @@ router.delete("/:id", async (req, res) => {
     res.json({ message: "Vendor comparison deleted" });
   } catch (error) {
     console.error("Error deleting vendor comparison:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/vendor-comparison/:id/history — who created/updated/deleted this comparison, and when
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/vendor-comparison/{id}/history:
+ *   get:
+ *     summary: Get the create/update/delete history for a vendor comparison (who did what, and when)
+ *     tags: [VendorComparison]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Activity history for this vendor comparison (covers both Stage 1 and Stage 2 — the finalize endpoints update the same record)
+ */
+router.get("/:id/history", async (req, res) => {
+  try {
+    const data = await getEntityHistory("vendor_comparison", req.params.id, {
+      limit: req.query.limit, offset: req.query.offset,
+    });
+    res.json(data);
+  } catch (error) {
+    console.error("Error fetching vendor comparison history:", error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });

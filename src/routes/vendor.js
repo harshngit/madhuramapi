@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { pool } = require("../db");
-const { logActivity } = require("./dashboard"); // adjust path if needed
+const { logActivity, getEntityHistory } = require("./dashboard"); // adjust path if needed
 
 /**
  * @swagger
@@ -402,6 +402,42 @@ router.delete("/:id", async (req, res) => {
   } catch (error) {
     console.error("Error deleting vendor:", error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/vendors/:id/history — who created/updated/deleted this vendor, and when
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/vendors/{id}/history:
+ *   get:
+ *     summary: Get the create/update/delete history for a vendor (who did what, and when)
+ *     tags: [Vendors]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Activity history for this vendor
+ */
+router.get("/:id/history", async (req, res) => {
+  try {
+    const data = await getEntityHistory("vendor", req.params.id, {
+      limit: req.query.limit, offset: req.query.offset,
+    });
+    res.json(data);
+  } catch (error) {
+    console.error("Error fetching vendor history:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

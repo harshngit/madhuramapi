@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { pool } = require("../db");
 const jwt = require("jsonwebtoken");
-const { logActivity } = require("./dashboard");
+const { logActivity, getEntityHistory } = require("./dashboard");
 const { sendPushToUsers } = require("../utils/pushHelper");
 
 // ─── JWT helper ───────────────────────────────────────────────────────────────
@@ -292,7 +292,7 @@ router.patch("/:leave_id/status", async (req, res) => {
     logActivity({
       action: `leave_${status}`,
       entity_type: "leave",
-      entity_id: leave.user_id,
+      entity_id: leave.leave_id,
       entity_name: `Leave ${status} for ${leave.name}`,
       performed_by: adminRes.rows[0].user_id,
       performed_by_name: adminRes.rows[0].name,
@@ -414,6 +414,42 @@ router.get("/:leave_id", async (req, res) => {
   } catch (error) {
     console.error("Get leave by id error:", error);
     res.status(500).json({ error: "Failed to fetch leave request" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/leave/:leave_id/history — who applied/approved/rejected this leave, and when
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/leave/{leave_id}/history:
+ *   get:
+ *     summary: Get the create/update/delete history for a leave request (who did what, and when)
+ *     tags: [Leave]
+ *     parameters:
+ *       - in: path
+ *         name: leave_id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Activity history for this leave request
+ */
+router.get("/:leave_id/history", async (req, res) => {
+  try {
+    const data = await getEntityHistory("leave", req.params.leave_id, {
+      limit: req.query.limit, offset: req.query.offset,
+    });
+    res.json(data);
+  } catch (error) {
+    console.error("Error fetching leave history:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

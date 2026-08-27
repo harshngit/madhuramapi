@@ -6,7 +6,7 @@ const path = require("path");
 const fs = require("fs");
 const nodemailer = require("nodemailer");
 const { generateMIRPdf } = require("../utils/mir_pdf");
-const { logActivity } = require("./dashboard");
+const { logActivity, getEntityHistory } = require("./dashboard");
 const { recordMovement } = require("./inventory"); // ← stock-out helper
 
 const uploadDir = path.join(__dirname, "../../uploads/mir");
@@ -1502,6 +1502,42 @@ router.delete("/:id", async (req, res) => {
     });
   } catch (error) {
     console.error("Error deleting MIR:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mir/:id/history — who created/updated/deleted this MIR, and when
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/mir/{id}/history:
+ *   get:
+ *     summary: Get the create/update/delete history for a MIR (who did what, and when)
+ *     tags: [MIR]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Activity history for this MIR
+ */
+router.get("/:id/history", async (req, res) => {
+  try {
+    const data = await getEntityHistory("mir", req.params.id, {
+      limit: req.query.limit, offset: req.query.offset,
+    });
+    res.json(data);
+  } catch (error) {
+    console.error("Error fetching MIR history:", error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });

@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { pool } = require("../db");
-const { logActivity } = require("./dashboard");
+const { logActivity, getEntityHistory } = require("./dashboard");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage 2 of the vendor comparison workflow. Operates on the SAME
@@ -408,6 +408,42 @@ router.put("/:id", async (req, res) => {
     console.error("Error updating finalized vendor comparison:", error);
     if (error.code === "23503" && error.constraint === "vendor_comparisons_approved_vendor_fkey")
       return res.status(400).json({ error: "Invalid approved_vendor: no vendor with that vendor_id exists" });
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/vendor-comparison-finalize/:id/history — who created/updated/deleted this comparison, and when
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/vendor-comparison-finalize/{id}/history:
+ *   get:
+ *     summary: Get the create/update/delete history for a vendor comparison (who did what, and when)
+ *     tags: [VendorComparisonFinalize]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Activity history for this vendor comparison (same underlying record as Stage 1)
+ */
+router.get("/:id/history", async (req, res) => {
+  try {
+    const data = await getEntityHistory("vendor_comparison", req.params.id, {
+      limit: req.query.limit, offset: req.query.offset,
+    });
+    res.json(data);
+  } catch (error) {
+    console.error("Error fetching vendor comparison history:", error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
