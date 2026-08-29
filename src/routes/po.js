@@ -6,7 +6,7 @@ const path = require("path");
 const fs = require("fs");
 const nodemailer = require("nodemailer");
 const { generatePOPdf } = require("../utils/po_pdf");
-const { logActivity, getEntityHistory } = require("./dashboard");
+const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./dashboard");
 const { generateEmailTemplate, formatCurrency, formatDate } = require("../utils/emailHelper");
 const { recordMovement } = require("./inventory"); // ← NEW: needed for inventory restore on delete
 
@@ -333,11 +333,11 @@ router.get("/project/:projectId", async (req, res) => {
   const { projectId } = req.params;
   try {
     const result = await pool.query("SELECT * FROM pos WHERE project_id = $1 ORDER BY created_at DESC", [projectId]);
-    const pos = result.rows.map(po => {
+    const pos = await attachCreatedUpdatedBy(result.rows.map(po => {
       const items = Array.isArray(po.items) ? po.items : [];
       const linked = items.length > 0 && items.every(i => i.inventory_id);
       return { ...po, linked };
-    });
+    }), "po", (r) => r.po_id);
     res.json(pos);
   } catch (error) {
     console.error("Error fetching POs:", error);
@@ -368,11 +368,11 @@ router.get("/sample/:sampleId", async (req, res) => {
   const { sampleId } = req.params;
   try {
     const result = await pool.query("SELECT * FROM pos WHERE sample_id = $1 ORDER BY created_at DESC", [sampleId]);
-    const pos = result.rows.map(po => {
+    const pos = await attachCreatedUpdatedBy(result.rows.map(po => {
       const items = Array.isArray(po.items) ? po.items : [];
       const linked = items.length > 0 && items.every(i => i.inventory_id);
       return { ...po, linked };
-    });
+    }), "po", (r) => r.po_id);
     res.json(pos);
   } catch (error) {
     console.error("Error fetching POs by sample:", error);
@@ -408,7 +408,7 @@ router.get("/:id", async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "PO not found" });
     }
-    res.json(result.rows[0]);
+    res.json(await attachCreatedUpdatedBy(result.rows[0], "po", (r) => r.po_id));
   } catch (error) {
     console.error("Error fetching PO:", error);
     res.status(500).json({ error: error.message });

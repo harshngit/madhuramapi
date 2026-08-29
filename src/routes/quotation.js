@@ -5,7 +5,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const XLSX = require("xlsx");
-const { logActivity, getEntityHistory } = require("./dashboard");
+const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./dashboard");
 const {
   recalculateItems,
   buildAddonKeys,
@@ -883,7 +883,7 @@ router.get("/", async (req, res) => {
     query += " ORDER BY created_at DESC";
 
     const result = await pool.query(query, params);
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "quotation", (r) => r.id));
   } catch (err) {
     console.error("Get quotations error:", err);
     res.status(500).json({ error: err.message });
@@ -1096,7 +1096,8 @@ router.get("/:id", async (req, res) => {
       dynamic_values: dynamicByItem[item.id] || {},
     }));
 
-    res.json({ ...quotResult.rows[0], items });
+    const quotation = await attachCreatedUpdatedBy({ ...quotResult.rows[0], items }, "quotation", (r) => r.id);
+    res.json(quotation);
   } catch (err) {
     console.error("Get quotation error:", err);
     res.status(500).json({ error: err.message });

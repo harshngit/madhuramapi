@@ -3,7 +3,7 @@ const router = express.Router();
 const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
-const { logActivity, getEntityHistory } = require("./dashboard");
+const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./dashboard");
 const fs = require("fs");
 const { recordMovement } = require("./inventory"); // ← new import
 const { stampInventoryChain } = require("./inventory_trace");
@@ -452,7 +452,7 @@ router.get("/project/:projectId", async (req, res) => {
       "SELECT * FROM delivery_challans WHERE project_id=$1 ORDER BY created_at DESC",
       [req.params.projectId]
     );
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "delivery_challan", (r) => r.dc_id));
   } catch (err) {
     console.error("Error fetching DCs:", err);
     res.status(500).json({ error: err.message });
@@ -468,7 +468,7 @@ router.get("/po/:poId", async (req, res) => {
       "SELECT * FROM delivery_challans WHERE po_id=$1 ORDER BY created_at DESC",
       [req.params.poId]
     );
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "delivery_challan", (r) => r.dc_id));
   } catch (err) {
     console.error("Error fetching DCs by PO:", err);
     res.status(500).json({ error: err.message });
@@ -499,7 +499,7 @@ router.get("/sample/:sampleId", async (req, res) => {
       "SELECT * FROM delivery_challans WHERE sample_id=$1 ORDER BY created_at DESC",
       [req.params.sampleId]
     );
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "delivery_challan", (r) => r.dc_id));
   } catch (err) {
     console.error("Error fetching DCs by sample:", err);
     res.status(500).json({ error: err.message });
@@ -575,7 +575,7 @@ router.get("/:id", async (req, res) => {
     );
     if (result.rows.length === 0)
       return res.status(404).json({ error: "Delivery Challan not found" });
-    res.json(result.rows[0]);
+    res.json(await attachCreatedUpdatedBy(result.rows[0], "delivery_challan", (r) => r.dc_id));
   } catch (err) {
     console.error("Error fetching DC:", err);
     res.status(500).json({ error: err.message });

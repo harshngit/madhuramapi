@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { pool } = require("../db");
-const { logActivity, getEntityHistory } = require("./dashboard");
+const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./dashboard");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
@@ -123,7 +123,7 @@ router.get("/vendor/:vendorId", async (req, res) => {
        ORDER BY created_at DESC`,
       [vendorId]
     );
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "price_list", (r) => r.price_list_id));
   } catch (error) {
     console.error("Error fetching vendor price lists:", error);
     res.status(500).json({ error: error.message });
@@ -493,7 +493,7 @@ router.get("/:id", async (req, res) => {
     const priceList = priceListResult.rows[0];
     priceList.items = itemsResult.rows;
 
-    res.json(priceList);
+    res.json(await attachCreatedUpdatedBy(priceList, "price_list", (r) => r.price_list_id));
   } catch (error) {
     console.error("Error fetching price list details:", error);
     res.status(500).json({ error: error.message });

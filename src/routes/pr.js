@@ -6,7 +6,7 @@ const path = require("path");
 const fs = require("fs");
 const nodemailer = require("nodemailer");
 const { generatePrPdf } = require("../utils/pr_pdf");
-const { logActivity, getEntityHistory } = require("./dashboard");
+const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./dashboard");
 const { generateEmailTemplate, formatCurrency, formatDate } = require("../utils/emailHelper");
 const { recordMovement } = require("./inventory"); // ← stock-out helper
 
@@ -198,7 +198,7 @@ async function getPrList(whereClause, values) {
      GROUP BY pr.pr_id`,
     values
   );
-  return result.rows;
+  return attachCreatedUpdatedBy(result.rows, "pr", (r) => r.pr_id);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

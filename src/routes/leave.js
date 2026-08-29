@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { pool } = require("../db");
 const jwt = require("jsonwebtoken");
-const { logActivity, getEntityHistory } = require("./dashboard");
+const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./dashboard");
 const { sendPushToUsers } = require("../utils/pushHelper");
 
 // ─── JWT helper ───────────────────────────────────────────────────────────────
@@ -344,7 +344,7 @@ router.get("/", async (req, res) => {
 
     query += " ORDER BY created_at DESC";
     const result = await pool.query(query, values);
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "leave", (r) => r.leave_id));
   } catch (error) {
     console.error("Get all leave error:", error);
     res.status(500).json({ error: "Failed to fetch leave requests" });
@@ -375,7 +375,7 @@ router.get("/user/:user_id", async (req, res) => {
       "SELECT * FROM leave_requests WHERE user_id = $1 ORDER BY created_at DESC",
       [req.params.user_id]
     );
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "leave", (r) => r.leave_id));
   } catch (error) {
     console.error("Get user leave error:", error);
     res.status(500).json({ error: "Failed to fetch user leave requests" });
@@ -410,7 +410,7 @@ router.get("/:leave_id", async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Leave request not found" });
     }
-    res.json(result.rows[0]);
+    res.json(await attachCreatedUpdatedBy(result.rows[0], "leave", (r) => r.leave_id));
   } catch (error) {
     console.error("Get leave by id error:", error);
     res.status(500).json({ error: "Failed to fetch leave request" });

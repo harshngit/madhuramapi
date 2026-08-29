@@ -4,7 +4,7 @@ const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
-const { logActivity, getEntityHistory } = require("./dashboard");
+const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./dashboard");
 
 // ─── Upload Directory Setup ───────────────────────────────────────────────────
 const uploadDir = path.join(__dirname, "../../uploads/attendance");
@@ -292,7 +292,7 @@ router.get("/", async (req, res) => {
 
     query += " ORDER BY date DESC, created_at DESC";
     const result = await pool.query(query, values);
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "attendance", (r) => r.attendance_id));
   } catch (error) {
     console.error("Get attendance error:", error);
     res.status(500).json({ error: "Failed to fetch attendance records" });
@@ -561,7 +561,7 @@ router.get("/project/:project_id", async (req, res) => {
       "SELECT * FROM attendance WHERE project_id = $1 ORDER BY date DESC, created_at DESC",
       [project_id]
     );
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "attendance", (r) => r.attendance_id));
   } catch (error) {
     console.error("Get project attendance error:", error);
     res.status(500).json({ error: "Failed to fetch project attendance records" });
@@ -590,7 +590,7 @@ router.get("/user/:user_id", async (req, res) => {
       "SELECT * FROM attendance WHERE user_id = $1 ORDER BY date DESC, created_at DESC",
       [user_id]
     );
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "attendance", (r) => r.attendance_id));
   } catch (error) {
     console.error("Get user attendance error:", error);
     res.status(500).json({ error: "Failed to fetch user attendance records" });
@@ -984,7 +984,7 @@ router.get("/:id", async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Attendance record not found" });
     }
-    res.json(result.rows[0]);
+    res.json(await attachCreatedUpdatedBy(result.rows[0], "attendance", (r) => r.attendance_id));
   } catch (error) {
     console.error("Get attendance by ID error:", error);
     res.status(500).json({ error: "Failed to fetch attendance record" });

@@ -4,7 +4,7 @@ const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
-const { logActivity, getEntityHistory } = require("./dashboard");
+const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./dashboard");
 const { recordMovement } = require("./inventory"); // stock-out AND stock-in helper
 const { getBoqUsageCounts, getBoqUsageDetails } = require("../utils/boqUsage");
 
@@ -262,7 +262,9 @@ async function enrichWithBoqInfo(samples, { full = false } = {}) {
     return { ...s, item_description: enrichedItems };
   });
 
-  return Array.isArray(samples) ? enriched : enriched[0];
+  const withCreatedUpdatedBy = await attachCreatedUpdatedBy(enriched, "sample", (r) => r.sample_id);
+
+  return Array.isArray(samples) ? withCreatedUpdatedBy : withCreatedUpdatedBy[0];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

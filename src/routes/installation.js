@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { pool } = require("../db");
-const { logActivity, getEntityHistory } = require("./dashboard");
+const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./dashboard");
 const { recordMovement } = require("./inventory"); // stock-out AND stock-in helper
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -205,7 +205,9 @@ async function enrichWithBoqInfo(installations) {
     return { ...inst, item_description: enrichedItems };
   });
 
-  return Array.isArray(installations) ? enriched : enriched[0];
+  const withCreatedUpdatedBy = await attachCreatedUpdatedBy(enriched, "installation", (r) => r.installation_id);
+
+  return Array.isArray(installations) ? withCreatedUpdatedBy : withCreatedUpdatedBy[0];
 }
 
 /**

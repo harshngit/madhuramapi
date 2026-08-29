@@ -3,7 +3,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const { pool } = require("../db");
-const { logActivity, getEntityHistory } = require("./dashboard"); // adjust path if needed
+const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./dashboard"); // adjust path if needed
 
 
 const router = express.Router();
@@ -340,7 +340,7 @@ router.post("/", uploadMiddleware, async (req, res) => {
 router.get("/", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM projects ORDER BY created_at DESC");
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "project", (r) => r.project_id));
   } catch (error) {
     console.error("Get projects error:", error);
     res.status(500).json({ error: "Failed to fetch projects" });
@@ -381,7 +381,7 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ error: "Project not found" });
     }
 
-    res.json(result.rows[0]);
+    res.json(await attachCreatedUpdatedBy(result.rows[0], "project", (r) => r.project_id));
 
     // Log Activity
     logActivity({
@@ -703,7 +703,7 @@ router.get("/user/:userId", async (req, res) => {
       [userId]
     );
 
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "project", (r) => r.project_id));
   } catch (error) {
     console.error("Get user projects error:", error);
     res.status(500).json({ error: "Failed to fetch user projects" });

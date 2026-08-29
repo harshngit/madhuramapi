@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { pool } = require("../db");
-const { logActivity, getEntityHistory } = require("./dashboard"); // adjust path if needed
+const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./dashboard"); // adjust path if needed
 
 /**
  * @swagger
@@ -125,7 +125,7 @@ router.post("/", async (req, res) => {
 router.get("/", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM vendors ORDER BY created_at DESC");
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "vendor", (r) => r.vendor_id));
   } catch (error) {
     console.error("Error fetching vendors:", error);
     res.status(500).json({ error: error.message });
@@ -161,7 +161,7 @@ router.get("/search", async (req, res) => {
       "SELECT * FROM vendors WHERE vendor_name ILIKE $1 ORDER BY created_at DESC",
       [`%${name}%`]
     );
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "vendor", (r) => r.vendor_id));
   } catch (error) {
     console.error("Error searching vendors:", error);
     res.status(500).json({ error: error.message });
@@ -195,7 +195,7 @@ router.get("/:id", async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Vendor not found" });
     }
-    res.json(result.rows[0]);
+    res.json(await attachCreatedUpdatedBy(result.rows[0], "vendor", (r) => r.vendor_id));
   } catch (error) {
     console.error("Error fetching vendor:", error);
     res.status(500).json({ error: error.message });

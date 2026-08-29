@@ -6,7 +6,7 @@ const path = require("path");
 const fs = require("fs");
 const nodemailer = require("nodemailer");
 const { generateMIRPdf } = require("../utils/mir_pdf");
-const { logActivity, getEntityHistory } = require("./dashboard");
+const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./dashboard");
 const { recordMovement } = require("./inventory"); // ← stock-out helper
 
 const uploadDir = path.join(__dirname, "../../uploads/mir");
@@ -932,7 +932,7 @@ router.post("/hiranandani", async (req, res) => {
 router.get("/", async (req, res) => {
   try {
     const r = await pool.query("SELECT * FROM mirs ORDER BY created_at DESC");
-    res.json(r.rows.map(flattenMir));
+    res.json(await attachCreatedUpdatedBy(r.rows.map(flattenMir), "mir", (row) => row.mir_id));
   } catch (e) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -963,7 +963,7 @@ router.get("/project/:projectId", async (req, res) => {
       "SELECT * FROM mirs WHERE project_id=$1 ORDER BY created_at DESC",
       [req.params.projectId]
     );
-    res.json(r.rows.map(flattenMir));
+    res.json(await attachCreatedUpdatedBy(r.rows.map(flattenMir), "mir", (row) => row.mir_id));
   } catch (e) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -994,7 +994,7 @@ router.get("/sample/:sampleId", async (req, res) => {
       "SELECT * FROM mirs WHERE sample_id=$1 ORDER BY created_at DESC",
       [req.params.sampleId]
     );
-    res.json(r.rows.map(flattenMir));
+    res.json(await attachCreatedUpdatedBy(r.rows.map(flattenMir), "mir", (row) => row.mir_id));
   } catch (e) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -1025,7 +1025,7 @@ router.get("/:id", async (req, res) => {
   try {
     const r = await pool.query("SELECT * FROM mirs WHERE mir_id=$1", [req.params.id]);
     if (r.rows.length === 0) return res.status(404).json({ error: "MIR not found" });
-    res.json(flattenMir(r.rows[0]));
+    res.json(await attachCreatedUpdatedBy(flattenMir(r.rows[0]), "mir", (row) => row.mir_id));
   } catch (e) {
     res.status(500).json({ error: "Internal Server Error" });
   }

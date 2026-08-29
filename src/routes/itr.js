@@ -4,7 +4,7 @@ const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
-const { logActivity, getEntityHistory } = require("./dashboard");
+const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./dashboard");
 
 // ─── Upload Directory Setup ───────────────────────────────────────────────────
 const uploadDir = path.join(__dirname, "../../uploads/itr");
@@ -376,7 +376,7 @@ router.get("/project/:projectId", async (req, res) => {
       "SELECT * FROM itrs WHERE project_id = $1 ORDER BY created_at DESC",
       [projectId]
     );
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "itr", (r) => r.itr_id));
   } catch (error) {
     console.error("Error fetching ITRs:", error);
     res.status(500).json({ error: error.message });
@@ -412,7 +412,7 @@ router.get("/sample/:sampleId", async (req, res) => {
       "SELECT * FROM itrs WHERE sample_id = $1 ORDER BY created_at DESC",
       [sampleId]
     );
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "itr", (r) => r.itr_id));
   } catch (error) {
     console.error("Error fetching ITRs by sample:", error);
     res.status(500).json({ error: error.message });
@@ -453,7 +453,7 @@ router.get("/:id", async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "ITR not found" });
     }
-    res.json(result.rows[0]);
+    res.json(await attachCreatedUpdatedBy(result.rows[0], "itr", (r) => r.itr_id));
   } catch (error) {
     console.error("Error fetching ITR:", error);
     res.status(500).json({ error: error.message });

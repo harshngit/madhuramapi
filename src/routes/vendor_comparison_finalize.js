@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { pool } = require("../db");
-const { logActivity, getEntityHistory } = require("./dashboard");
+const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./dashboard");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage 2 of the vendor comparison workflow. Operates on the SAME
@@ -271,7 +271,7 @@ router.get("/project/:projectId", async (req, res) => {
     if (result.rows.length === 0)
       return res.status(404).json({ error: "No finalized vendor comparisons found for this project" });
 
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "vendor_comparison", (r) => r.comparison_id));
   } catch (error) {
     console.error("Error fetching finalized vendor comparisons by project:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -314,7 +314,7 @@ router.get("/:id", async (req, res) => {
     );
     if (result.rows.length === 0)
       return res.status(404).json({ error: "Vendor comparison not found" });
-    res.json(result.rows[0]);
+    res.json(await attachCreatedUpdatedBy(result.rows[0], "vendor_comparison", (r) => r.comparison_id));
   } catch (error) {
     console.error("Error fetching vendor comparison:", error);
     res.status(500).json({ error: "Internal Server Error" });

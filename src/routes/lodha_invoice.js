@@ -1,6 +1,6 @@
 const express = require("express");
 const { pool } = require("../db");
-const { logActivity, getEntityHistory } = require("./dashboard");
+const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./dashboard");
 
 const router = express.Router();
 
@@ -392,7 +392,7 @@ router.post("/", async (req, res) => {
 router.get("/", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM lodha_invoices ORDER BY created_at DESC");
-    res.json(result.rows.map(formatLodhaInvoiceRow));
+    res.json(await attachCreatedUpdatedBy(result.rows.map(formatLodhaInvoiceRow), "lodha_invoice", (r) => r.invoice_id));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -432,7 +432,7 @@ router.get("/project/:projectId", async (req, res) => {
       "SELECT * FROM lodha_invoices WHERE project_id = $1 ORDER BY created_at DESC",
       [projectId]
     );
-    res.json(result.rows.map(formatLodhaInvoiceRow));
+    res.json(await attachCreatedUpdatedBy(result.rows.map(formatLodhaInvoiceRow), "lodha_invoice", (r) => r.invoice_id));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -476,10 +476,11 @@ router.get("/:id", async (req, res) => {
       "SELECT * FROM lodha_invoice_items WHERE invoice_id = $1 ORDER BY sn NULLS LAST, item_id",
       [id]
     );
-    res.json({
+    const invoice = await attachCreatedUpdatedBy({
       ...formatLodhaInvoiceRow(invResult.rows[0]),
       items: itemResult.rows.map(formatLodhaInvoiceItemRow)
-    });
+    }, "lodha_invoice", (r) => r.invoice_id);
+    res.json(invoice);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

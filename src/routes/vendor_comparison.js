@@ -4,7 +4,7 @@ const { pool } = require("../db");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
-const { logActivity, getEntityHistory } = require("./dashboard");
+const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./dashboard");
 
 // Ensure upload directory exists
 const uploadDir = path.join(__dirname, "../../uploads/vendor_comparison");
@@ -328,7 +328,7 @@ router.get("/", async (req, res) => {
 
     query += " ORDER BY vc.created_at DESC";
     const result = await pool.query(query, params);
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "vendor_comparison", (r) => r.comparison_id));
   } catch (error) {
     console.error("Error fetching vendor comparisons:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -371,7 +371,7 @@ router.get("/project/:projectId", async (req, res) => {
     if (result.rows.length === 0)
       return res.status(404).json({ error: "No vendor comparisons found for this project" });
 
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "vendor_comparison", (r) => r.comparison_id));
   } catch (error) {
     console.error("Error fetching vendor comparisons by project:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -410,7 +410,7 @@ router.get("/:id", async (req, res) => {
     );
     if (result.rows.length === 0)
       return res.status(404).json({ error: "Vendor comparison not found" });
-    res.json(result.rows[0]);
+    res.json(await attachCreatedUpdatedBy(result.rows[0], "vendor_comparison", (r) => r.comparison_id));
   } catch (error) {
     console.error("Error fetching vendor comparison:", error);
     res.status(500).json({ error: "Internal Server Error" });

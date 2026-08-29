@@ -4,7 +4,7 @@ const path = require("path");
 const fs = require("fs");
 const PDFParser = require("pdf2json");
 const { pool } = require("../db");
-const { logActivity, getEntityHistory } = require("./dashboard");
+const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./dashboard");
 const { getBoqUsageDetails, getBoqUsageCounts } = require("../utils/boqUsage");
 
 const router = express.Router();
@@ -1296,7 +1296,7 @@ router.get("/", async (req, res) => {
        FROM boqs
        ORDER BY created_at DESC`
     );
-    res.json(result.rows);
+    res.json(await attachCreatedUpdatedBy(result.rows, "boq", (r) => r.boq_id));
   } catch (err) {
     console.error("Error fetching BOQs:", err);
     res.status(500).json({ error: "Internal Server Error" });
@@ -1331,7 +1331,8 @@ router.get("/items", async (req, res) => {
        FROM boqs
        ORDER BY boq_id ASC`
     );
-    res.json({ total: result.rowCount, items: result.rows });
+    const items = await attachCreatedUpdatedBy(result.rows, "boq", (r) => r.boq_id);
+    res.json({ total: result.rowCount, items });
   } catch (err) {
     console.error("Error fetching BOQ items:", err);
     res.status(500).json({ error: "Internal Server Error" });
@@ -1763,10 +1764,11 @@ router.get("/project/:projectId", async (req, res) => {
     );
 
     const usageCounts = await getBoqUsageCounts(result.rows.map(r => r.boq_id));
-    const boqs = result.rows.map(r => ({
+    const boqsWithUsage = result.rows.map(r => ({
       ...r,
       usage_counts: usageCounts[r.boq_id] || { samples: 0, installation: 0, pr: 0, po: 0, itr: 0, dc: 0, mir: 0, total: 0 },
     }));
+    const boqs = await attachCreatedUpdatedBy(boqsWithUsage, "boq", (r) => r.boq_id);
 
     res.json({
       project_id: parseInt(projectId),
@@ -1837,10 +1839,11 @@ router.get("/project/:projectId/items", async (req, res) => {
       return res.status(404).json({ error: "No BOQ items found for this project" });
 
     const usageCounts = await getBoqUsageCounts(result.rows.map(r => r.boq_id));
-    const items = result.rows.map(r => ({
+    const itemsWithUsage = result.rows.map(r => ({
       ...r,
       usage_counts: usageCounts[r.boq_id] || { samples: 0, installation: 0, pr: 0, po: 0, itr: 0, dc: 0, mir: 0, total: 0 },
     }));
+    const items = await attachCreatedUpdatedBy(itemsWithUsage, "boq", (r) => r.boq_id);
 
     res.json({
       project_id: parseInt(projectId),
@@ -1983,8 +1986,9 @@ router.get("/:id", async (req, res) => {
 
     const boq = result.rows[0];
     const usage = await getBoqUsageDetails(req.params.id);
+    const boqWithUsage = await attachCreatedUpdatedBy({ ...boq, ...usage }, "boq", (r) => r.boq_id);
 
-    res.json({ ...boq, ...usage });
+    res.json(boqWithUsage);
   } catch (err) {
     console.error("Error fetching BOQ:", err);
     res.status(500).json({ error: "Internal Server Error" });

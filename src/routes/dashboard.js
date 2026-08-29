@@ -148,6 +148,63 @@ async function getEntityHistory(entityType, entityId, { limit = 50, offset = 0 }
   };
 }
 
+// ─── attachCreatedUpdatedBy — bulk-enrich rows with created_by / updated_by ───
+// Adds { created_by, created_by_name, updated_by, updated_by_name } to every
+// row, derived from activity_log (the EARLIEST 'created' action = creator,
+// the LATEST 'updated' action = last editor — falls back to the creator if
+// the record was never updated). Used by every module's GET (list) and
+// GET (by id) endpoints.
+//
+// One batched query per call (not per row) — safe to use on list endpoints.
+// `getId(row)` extracts each row's id in whatever field that table uses
+// (pr_id, po_id, sample_id, etc.); ids are string-compared against
+// activity_log.entity_id so alphanumeric ids work the same as numeric ones.
+async function attachCreatedUpdatedBy(rows, entityType, getId = (r) => r.id) {
+  const list = Array.isArray(rows) ? rows : [rows];
+  if (list.length === 0) return rows;
+
+  const ids = [...new Set(list.map((r) => String(getId(r))).filter(Boolean))];
+  if (ids.length === 0) return rows;
+
+  const result = await pool.query(
+    `WITH created AS (
+       SELECT DISTINCT ON (entity_id) entity_id, performed_by, performed_by_name
+         FROM activity_log
+        WHERE entity_type = $1 AND entity_id = ANY($2) AND action = 'created'
+        ORDER BY entity_id, created_at ASC
+     ),
+     updated AS (
+       SELECT DISTINCT ON (entity_id) entity_id, performed_by, performed_by_name
+         FROM activity_log
+        WHERE entity_type = $1 AND entity_id = ANY($2) AND action = 'updated'
+        ORDER BY entity_id, created_at DESC
+     )
+     SELECT COALESCE(c.entity_id, u.entity_id) AS entity_id,
+            c.performed_by      AS created_by,
+            c.performed_by_name AS created_by_name,
+            u.performed_by      AS updated_by,
+            u.performed_by_name AS updated_by_name
+       FROM created c
+       FULL OUTER JOIN updated u ON c.entity_id = u.entity_id`,
+    [entityType, ids]
+  );
+
+  const byId = new Map(result.rows.map((r) => [String(r.entity_id), r]));
+
+  const enriched = list.map((row) => {
+    const info = byId.get(String(getId(row)));
+    return {
+      ...row,
+      created_by:        info?.created_by        ?? null,
+      created_by_name:   info?.created_by_name   ?? null,
+      updated_by:        info?.updated_by        ?? info?.created_by      ?? null,
+      updated_by_name:   info?.updated_by_name   ?? info?.created_by_name ?? null,
+    };
+  });
+
+  return Array.isArray(rows) ? enriched : enriched[0];
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // STATS
 // ════════════════════════════════════════════════════════════════════════════
@@ -599,6 +656,7 @@ module.exports = {
   router,
   logActivity,
   getEntityHistory,
+  attachCreatedUpdatedBy,
   wsHandler,
   broadcast
 };
