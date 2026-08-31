@@ -241,6 +241,8 @@ router.post("/upload-invoice", upload.single("file"), (req, res) => {
  *               work_order_number: { type: string }
  *               order_date:       { type: string, format: date }
  *               auto_sync_inventory: { type: boolean, default: true }
+ *               user_id:          { type: string, description: "Who is creating this DC (recorded as created_by)" }
+ *               user_name:        { type: string }
  *     responses:
  *       201:
  *         description: Delivery Challan created; items added to inventory
@@ -626,6 +628,8 @@ router.get("/:id", async (req, res) => {
  *               challan_date:      { type: string, format: date }
  *               work_order_number: { type: string }
  *               order_date:        { type: string, format: date }
+ *               user_id:           { type: string, description: "Who is making this update (recorded as updated_by)" }
+ *               user_name:         { type: string }
  *     responses:
  *       200:
  *         description: Updated

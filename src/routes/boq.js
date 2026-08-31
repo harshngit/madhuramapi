@@ -576,6 +576,11 @@ function parseHiranandaniBoqPdf(filePath) {
  *                 type: string
  *                 format: binary
  *                 description: Optional PDF/reference file attached to this row
+ *               user_id:
+ *                 type: string
+ *                 description: Who is creating this BOQ item (recorded as created_by)
+ *               user_name:
+ *                 type: string
  *     responses:
  *       201:
  *         description: BOQ created
@@ -2048,6 +2053,11 @@ router.get("/:id", async (req, res) => {
  *               boq_file:
  *                 type: string
  *                 format: binary
+ *               user_id:
+ *                 type: string
+ *                 description: Who is making this update (recorded as updated_by)
+ *               user_name:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Updated BOQ

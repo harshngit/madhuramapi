@@ -291,6 +291,8 @@ router.post("/upload-signature", uploadSignature.single("file"), (req, res) => {
  *                     boq_id:               { type: integer, description: "Link to a BOQ item (boqs.boq_id) — informational only, does not deduct BOQ quantity" }
  *                     boq_qty:              { type: number,  description: "Qty being requisitioned against that BOQ item" }
  *                     item_no:              { type: string,  description: "Item number for this line — stored and returned exactly as sent, independent of boq_item_code (which is looked up live from the linked BOQ item)" }
+ *               user_id:       { type: string, description: "Who is creating this PR (recorded as created_by)" }
+ *               user_name:     { type: string }
  *     responses:
  *       201:
  *         description: PR created; linked inventory items deducted
@@ -518,6 +520,28 @@ router.get("/", async (req, res) => {
  *         name: id
  *         required: true
  *         schema: { type: integer }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               project_name:         { type: string }
+ *               pr_number:            { type: string }
+ *               workorder_no:         { type: string }
+ *               location:             { type: string }
+ *               mirno:                { type: string }
+ *               urgency:              { type: string }
+ *               floor_no:             { type: string }
+ *               flat_no:              { type: string }
+ *               date:                 { type: string, format: date }
+ *               approved_by:          { type: string }
+ *               pr_file_path:         { type: string }
+ *               signature_file_path:  { type: string }
+ *               sample_id:            { type: string }
+ *               items:                { type: array, items: { type: object } }
+ *               user_id:              { type: string, description: "Who is making this update (recorded as updated_by)" }
+ *               user_name:            { type: string }
  *     responses:
  *       200:
  *         description: Updated

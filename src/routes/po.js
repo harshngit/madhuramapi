@@ -206,6 +206,11 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *               status:
  *                 type: string
  *                 default: created
+ *               created_by:
+ *                 type: string
+ *                 description: Who is creating this PO (recorded as created_by)
+ *               created_by_name:
+ *                 type: string
  *     responses:
  *       201:
  *         description: PO created successfully
@@ -535,6 +540,11 @@ router.get("/:id", async (req, res) => {
  *               notes:
  *                 type: string
  *               status:
+ *                 type: string
+ *               user_id:
+ *                 type: string
+ *                 description: Who is making this update (recorded as updated_by)
+ *               user_name:
  *                 type: string
  *     responses:
  *       200:

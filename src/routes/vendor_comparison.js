@@ -177,6 +177,8 @@ router.post("/upload", upload.array("files"), (req, res) => {
  *             properties:
  *               project_id: { type: integer }
  *               pr_no: { type: integer }
+ *               user_id: { type: string, description: "Who is creating this comparison (recorded as created_by)" }
+ *               user_name: { type: string }
  *               vendorlist:
  *                 type: array
  *                 items:
@@ -468,6 +470,8 @@ router.get("/:id", async (req, res) => {
  *                           sgst: { type: number }
  *                           cgst: { type: number }
  *                           payment_terms: { type: string }
+ *               user_id: { type: string, description: "Who is making this update (recorded as updated_by)" }
+ *               user_name: { type: string }
  *     responses:
  *       200:
  *         description: Updated

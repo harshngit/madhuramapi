@@ -287,6 +287,8 @@ router.post("/upload-reference-doc", uploadReferenceDoc.single("file"), (req, re
  *                     item_no:      { type: string,  description: "BOQ item number for this line (optional, same as boqs.item_code)" }
  *                     boq_id:       { type: integer, description: "Link to a BOQ item (boqs.boq_id) — informational only, does not deduct BOQ quantity" }
  *                     boq_qty:      { type: number,  description: "Qty being recorded against that BOQ item" }
+ *               user_id:              { type: string, description: "Who is creating this MIR (recorded as created_by)" }
+ *               user_name:            { type: string }
  *     responses:
  *       201:
  *         description: MIR created; linked inventory items deducted
@@ -473,6 +475,8 @@ router.post("/", async (req, res) => {
  *               template_ref:      { type: string }
  *               template_revision: { type: string }
  *               template_date:     { type: string }
+ *               user_id:           { type: string, description: "Who is creating this MIR (recorded as created_by)" }
+ *               user_name:         { type: string }
  *               items:
  *                 type: array
  *                 items:
@@ -745,6 +749,8 @@ router.post("/lodha", async (req, res) => {
  *                   checked_by:      { type: string }
  *                   status:          { type: string }
  *                   date_signature:  { type: string }
+ *               user_id:             { type: string, description: "Who is creating this MIR (recorded as created_by)" }
+ *               user_name:           { type: string }
  *               items:
  *                 type: array
  *                 items:
@@ -1057,6 +1063,31 @@ router.get("/:id", async (req, res) => {
  *         name: id
  *         required: true
  *         schema: { type: integer }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               project_name:            { type: string }
+ *               project_code:            { type: string }
+ *               client_name:             { type: string }
+ *               pmc:                     { type: string }
+ *               contractor:              { type: string }
+ *               vendor_code:             { type: string }
+ *               challan_no:              { type: string }
+ *               mir_refrence_no:         { type: string }
+ *               material_code:           { type: string }
+ *               inspection_date_time:    { type: string, format: date-time }
+ *               client_submission_date:  { type: string, format: date }
+ *               refrence_docs_attached:  { type: array, items: { type: object } }
+ *               mir_submited:            { type: boolean }
+ *               dynamic_field:           { type: array }
+ *               project_id:              { type: integer }
+ *               sample_id:               { type: string }
+ *               items:                   { type: array, items: { type: object } }
+ *               user_id:                 { type: string, description: "Who is making this update (recorded as updated_by)" }
+ *               user_name:               { type: string }
  *     responses:
  *       200:
  *         description: Updated

@@ -128,6 +128,8 @@ const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./das
  *                   properties:
  *                     file_name: { type: string }
  *                     file_url: { type: string }
+ *               user_id: { type: string, description: "Who is finalizing this comparison (recorded as created_by/updated_by)" }
+ *               user_name: { type: string }
  *           example:
  *             project_id: 1
  *             pr_no: 5
@@ -364,6 +366,8 @@ router.get("/:id", async (req, res) => {
  *                     cgst: { type: number }
  *                     payment_terms: { type: string }
  *               upload_document: { type: array, items: { type: object } }
+ *               user_id: { type: string, description: "Who is making this update (recorded as updated_by)" }
+ *               user_name: { type: string }
  *     responses:
  *       200:
  *         description: Updated

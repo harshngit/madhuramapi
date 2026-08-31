@@ -67,6 +67,9 @@ const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./das
  *               status:
  *                 type: string
  *                 enum: [active, inactive, blocked]
+ *               created_by:
+ *                 type: string
+ *                 description: Who is creating this vendor (recorded as created_by)
  *     responses:
  *       201:
  *         description: Vendor created successfully
@@ -237,6 +240,9 @@ router.get("/:id", async (req, res) => {
  *               status:
  *                 type: string
  *                 enum: [active, inactive, blocked]
+ *               user_id:
+ *                 type: string
+ *                 description: Who is making this update (recorded as updated_by)
  *     responses:
  *       200:
  *         description: Vendor updated successfully

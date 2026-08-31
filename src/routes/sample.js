@@ -389,6 +389,8 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                     boq_issued_qty: { type: number, example: 100,  description: "Qty to consume from the BOQ item's remaining quantity (defaults to quantity)" }
  *               add_fields:       { type: array }
  *               sample_file:      { type: array, items: { type: string }, description: "Array of file URLs — upload via POST /api/sample/upload first, then pass the returned filePaths here" }
+ *               created_by:       { type: string, description: "Who is creating this sample (recorded as created_by; falls back to user_id if not provided)" }
+ *               created_by_name:  { type: string }
  *           example:
  *             sample_id: "SAMPLE-001"
  *             project_id: 1

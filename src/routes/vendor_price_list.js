@@ -602,6 +602,11 @@ async function bulkInsertItems(client, priceListId, items) {
  *                       type: number
  *                     quantity:
  *                       type: number
+ *               user_id:
+ *                 type: string
+ *                 description: Who is creating this price list (recorded as created_by)
+ *               user_name:
+ *                 type: string
  *     responses:
  *       201:
  *         description: Price list created successfully
@@ -708,6 +713,11 @@ router.post("/", async (req, res) => {
  *                 type: array
  *                 items:
  *                   type: object
+ *               user_id:
+ *                 type: string
+ *                 description: Who is making this update (recorded as updated_by)
+ *               user_name:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Price list updated successfully
