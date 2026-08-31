@@ -33,7 +33,10 @@ const getItrRefNo = (itr_header) =>
  * @swagger
  * tags:
  *   name: ITR
- *   description: Inspection Test Request management
+ *   description: |
+ *     Inspection Test Request management. Every GET (list/by-id) response
+ *     also includes created_by/created_by_name/updated_by/updated_by_name —
+ *     see the CreatedUpdatedBy schema.
  */
 
 // =============================================================================

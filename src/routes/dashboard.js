@@ -148,6 +148,35 @@ async function getEntityHistory(entityType, entityId, { limit = 50, offset = 0 }
   };
 }
 
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     CreatedUpdatedBy:
+ *       type: object
+ *       description: |
+ *         Present on every module's GET (list) and GET-by-id responses.
+ *         Derived from activity_log — created_by/created_by_name come from
+ *         the record's earliest 'created' entry, updated_by/updated_by_name
+ *         from its latest 'updated' entry (falls back to the creator if the
+ *         record was never updated).
+ *       properties:
+ *         created_by:
+ *           type: string
+ *           nullable: true
+ *           description: user_id of whoever created this record
+ *         created_by_name:
+ *           type: string
+ *           nullable: true
+ *         updated_by:
+ *           type: string
+ *           nullable: true
+ *           description: user_id of whoever last updated this record
+ *         updated_by_name:
+ *           type: string
+ *           nullable: true
+ */
+
 // ─── attachCreatedUpdatedBy — bulk-enrich rows with created_by / updated_by ───
 // Adds { created_by, created_by_name, updated_by, updated_by_name } to every
 // row, derived from activity_log (the EARLIEST 'created' action = creator,

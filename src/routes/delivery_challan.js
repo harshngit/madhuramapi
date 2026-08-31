@@ -25,6 +25,16 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+/**
+ * @swagger
+ * tags:
+ *   name: DeliveryChallan
+ *   description: |
+ *     Delivery Challan management. Every GET (list/by-id/by-project/by-po/by-sample)
+ *     response also includes created_by/created_by_name/updated_by/updated_by_name
+ *     — see the CreatedUpdatedBy schema.
+ */
+
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPER: push DC items into inventory
 // ─────────────────────────────────────────────────────────────────────────────

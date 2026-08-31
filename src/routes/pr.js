@@ -16,6 +16,16 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const signatureUploadDir = path.join(__dirname, "../../uploads/pr_signatures");
 if (!fs.existsSync(signatureUploadDir)) fs.mkdirSync(signatureUploadDir, { recursive: true });
 
+/**
+ * @swagger
+ * tags:
+ *   name: PR
+ *   description: |
+ *     Purchase Requisition management. Every GET (list/by-id/by-project/by-sample)
+ *     response also includes created_by/created_by_name/updated_by/updated_by_name
+ *     — see the CreatedUpdatedBy schema.
+ */
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {

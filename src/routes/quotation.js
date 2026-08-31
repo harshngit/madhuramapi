@@ -236,7 +236,12 @@ async function insertItems(client, quotationId, items) {
  * @swagger
  * tags:
  *   name: Quotations
- *   description: Quotation (BOQ) management
+ *   description: |
+ *     Quotation (BOQ) management. Every GET (list/by-id) response also
+ *     includes created_by/created_by_name/updated_by/updated_by_name — see
+ *     the CreatedUpdatedBy schema (note: this is separate from the
+ *     quotation's own request-body created_by/updated_by fields used at
+ *     create/update time).
  */
 
 // ═══════════════════════════════════════════════════════════════════════════

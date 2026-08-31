@@ -20,6 +20,16 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+/**
+ * @swagger
+ * tags:
+ *   name: Sample
+ *   description: |
+ *     Sample management. Every GET (list/by-id/by-project) response also
+ *     includes created_by/created_by_name/updated_by/updated_by_name — see
+ *     the CreatedUpdatedBy schema.
+ */
+
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPER: scan item_description array and stock-out any item that carries
 // an inventory_id. Safe to call on both CREATE and UPDATE.

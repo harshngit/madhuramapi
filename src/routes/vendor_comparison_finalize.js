@@ -22,6 +22,10 @@ const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./das
  *     comparison already exists for that project_id + pr_no it is updated
  *     in place (approved_vendor / pricelist / upload_document); otherwise a
  *     new record is created directly at the finalized state.
+ *
+ *     Every GET (list/by-id/by-project) response also includes
+ *     created_by/created_by_name/updated_by/updated_by_name — see the
+ *     CreatedUpdatedBy schema.
  */
 
 /**

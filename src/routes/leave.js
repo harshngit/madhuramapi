@@ -21,7 +21,10 @@ function getTokenUser(req) {
  * @swagger
  * tags:
  *   name: Leave
- *   description: Leave request management
+ *   description: |
+ *     Leave request management. Every GET (list/by-id/by-user) response also
+ *     includes created_by/created_by_name/updated_by/updated_by_name — see
+ *     the CreatedUpdatedBy schema.
  */
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -9,6 +9,16 @@ const { getBoqUsageDetails, getBoqUsageCounts } = require("../utils/boqUsage");
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: BOQ
+ *   description: |
+ *     BOQ (Bill of Quantities) management. Every GET (list/items/by-project/by-id)
+ *     response also includes created_by/created_by_name/updated_by/updated_by_name
+ *     — see the CreatedUpdatedBy schema.
+ */
+
 // ─── Upload directory ─────────────────────────────────────────────────────────
 const uploadDir = path.join(__dirname, "../../uploads/boq");
 if (!fs.existsSync(uploadDir)) {

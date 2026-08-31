@@ -4,6 +4,16 @@ const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./das
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Lodha Invoice
+ *   description: |
+ *     Lodha invoice management. Every GET (list/by-id/by-project) response
+ *     also includes created_by/created_by_name/updated_by/updated_by_name —
+ *     see the CreatedUpdatedBy schema.
+ */
+
 function normalizeLodhaItem(item = {}) {
   return {
     sn: item.sn ?? item.sr ?? item.serial_number ?? null,

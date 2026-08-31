@@ -30,6 +30,10 @@ const upload = multer({ storage });
  *     chosen, use the **VendorComparisonFinalize** endpoints (POST/GET/PUT
  *     `/api/vendor-comparison-finalize`) to record the decision — that stage
  *     updates the SAME underlying record (matched by project_id + pr_no).
+ *
+ *     Every GET (list/by-id/by-project) response also includes
+ *     created_by/created_by_name/updated_by/updated_by_name — see the
+ *     CreatedUpdatedBy schema.
  */
 
 /**

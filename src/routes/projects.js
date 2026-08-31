@@ -129,7 +129,10 @@ const uploadMiddleware = (req, res, next) => {
  * @swagger
  * tags:
  *   name: Projects
- *   description: Project Management API
+ *   description: |
+ *     Project Management API. Every GET (list/by-id/by-user) response also
+ *     includes created_by/created_by_name/updated_by/updated_by_name — see
+ *     the CreatedUpdatedBy schema.
  */
 
 /**

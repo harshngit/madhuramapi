@@ -29,7 +29,10 @@ const upload = multer({ storage: storage });
  * @swagger
  * tags:
  *   name: Vendor Price List
- *   description: Manage vendor price lists and history
+ *   description: |
+ *     Manage vendor price lists and history. Every GET (list/by-id) response
+ *     also includes created_by/created_by_name/updated_by/updated_by_name —
+ *     see the CreatedUpdatedBy schema.
  */
 
 /**

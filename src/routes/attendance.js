@@ -88,7 +88,11 @@ const upload = multer({ storage: storage });
  * @swagger
  * tags:
  *   name: Attendance
- *   description: Attendance management API
+ *   description: |
+ *     Attendance management API. Every GET (list/by-id/by-project/by-user)
+ *     response also includes
+ *     created_by/created_by_name/updated_by/updated_by_name — see the
+ *     CreatedUpdatedBy schema.
  */
 
 /**

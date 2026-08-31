@@ -214,7 +214,12 @@ async function enrichWithBoqInfo(installations) {
  * @swagger
  * tags:
  *   name: Installation
- *   description: Installation management (mirrors Sample — inventory auto stock-out and BOQ auto-consumption when items carry inventory_id / boq_id)
+ *   description: |
+ *     Installation management (mirrors Sample — inventory auto stock-out and
+ *     BOQ auto-consumption when items carry inventory_id / boq_id). Every GET
+ *     (list/by-id) response also includes
+ *     created_by/created_by_name/updated_by/updated_by_name — see the
+ *     CreatedUpdatedBy schema.
  */
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -7,7 +7,10 @@ const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./das
  * @swagger
  * tags:
  *   name: Vendors
- *   description: Vendor management
+ *   description: |
+ *     Vendor management. Every GET (list/by-id) response also includes
+ *     created_by/created_by_name/updated_by/updated_by_name — see the
+ *     CreatedUpdatedBy schema.
  */
 
 /**
