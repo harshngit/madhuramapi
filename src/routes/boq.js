@@ -1180,11 +1180,7 @@ router.post("/rustomjee", upload.single("boq_file"), async (req, res) => {
  *                 description: Optional single PDF/reference file attached to every created row
  *               user_id:
  *                 type: string
- *                 description: |
- *                   Who is creating these BOQ items. Note: recorded once against
- *                   this bulk-import event (not per individual boq_id), so
- *                   created_by/created_by_name on the resulting rows (via
- *                   GET /api/boq/:id) will not reflect this value.
+ *                 description: Who is creating these BOQ items (recorded as created_by on every item in the batch)
  *               user_name:
  *                 type: string
  *     responses:
@@ -1280,16 +1276,20 @@ router.post("/bulk", upload.single("boq_file"), async (req, res) => {
       items: result.rows,
     });
 
-    logActivity({
-      action: "created",
-      entity_type: "boq",
-      entity_id: null,
-      entity_name: `Bulk BOQ Import (${result.rowCount} items)`,
-      performed_by: req.body.user_id || null,
-      performed_by_name: req.body.user_name || null,
-      project_id,
-      meta: { items_created: result.rowCount },
-    });
+    // One activity entry per created row (not one for the whole batch) so
+    // created_by/created_by_name actually resolve for each boq_id afterward.
+    for (const row of result.rows) {
+      logActivity({
+        action: "created",
+        entity_type: "boq",
+        entity_id: row.boq_id,
+        entity_name: row.description || `BOQ #${row.boq_id}`,
+        performed_by: req.body.user_id || null,
+        performed_by_name: req.body.user_name || null,
+        project_id,
+        meta: { bulk_import: true, items_created: result.rowCount },
+      });
+    }
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("Error bulk creating BOQ items:", err);
@@ -1437,9 +1437,10 @@ router.post("/parse-pdf", upload.single("boq_file"), async (req, res) => {
       const sql = `
         INSERT INTO boqs (category, item_code, description, unit, quantity, boq_file, project_id)
         VALUES ($1,$2,$3,$4,$5,$6,$7)
+        RETURNING boq_id, description
       `;
       for (const item of parsedItems) {
-        await pool.query(sql, [
+        const inserted = await pool.query(sql, [
           category || item.section || null,
           item.item_no,
           item.description,
@@ -1449,18 +1450,21 @@ router.post("/parse-pdf", upload.single("boq_file"), async (req, res) => {
           parseInt(project_id),
         ]);
         savedCount++;
-      }
 
-      logActivity({
-        action: "created",
-        entity_type: "boq",
-        entity_id: null,
-        entity_name: `BOQ PDF Import — ${req.file.originalname}`,
-        performed_by: req.body.user_id || null,
-        performed_by_name: req.body.user_name || null,
-        project_id,
-        meta: { items_imported: savedCount, filename: req.file.originalname },
-      });
+        // One activity entry per created row (not one for the whole batch) so
+        // created_by/created_by_name actually resolve for each boq_id afterward.
+        const row = inserted.rows[0];
+        logActivity({
+          action: "created",
+          entity_type: "boq",
+          entity_id: row.boq_id,
+          entity_name: row.description || `BOQ #${row.boq_id}`,
+          performed_by: req.body.user_id || null,
+          performed_by_name: req.body.user_name || null,
+          project_id,
+          meta: { pdf_import: true, filename: req.file.originalname },
+        });
+      }
     }
 
     return res.json({
@@ -1553,7 +1557,7 @@ router.post("/parse-pdf/lodha", upload.single("boq_file"), async (req, res) => {
   }
 
   const filePath = path.join(uploadDir, req.file.filename);
-  const { project_id, save, category } = req.body;
+  const { project_id, project_name, save, category } = req.body;
   const shouldSave = save === "true" || save === true;
 
   try {
@@ -1564,9 +1568,10 @@ router.post("/parse-pdf/lodha", upload.single("boq_file"), async (req, res) => {
       const sql = `
         INSERT INTO boqs (category, item_no, item_code, description, unit, quantity, rate, amount, boq_file, project_id, project_name)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        RETURNING boq_id, description
       `;
       for (const item of parsedItems) {
-        await pool.query(sql, [
+        const inserted = await pool.query(sql, [
           category || item.section || null,
           item.item_no || null,
           item.hsn || null,
@@ -1580,18 +1585,21 @@ router.post("/parse-pdf/lodha", upload.single("boq_file"), async (req, res) => {
           project_name || null,
         ]);
         savedCount++;
-      }
 
-      logActivity({
-        action: "created",
-        entity_type: "boq",
-        entity_id: null,
-        entity_name: `Lodha BOQ PDF Import — ${req.file.originalname}`,
-        performed_by: req.body.user_id || null,
-        performed_by_name: req.body.user_name || null,
-        project_id,
-        meta: { client: "lodha", items_imported: savedCount, filename: req.file.originalname },
-      });
+        // One activity entry per created row (not one for the whole batch) so
+        // created_by/created_by_name actually resolve for each boq_id afterward.
+        const row = inserted.rows[0];
+        logActivity({
+          action: "created",
+          entity_type: "boq",
+          entity_id: row.boq_id,
+          entity_name: row.description || `BOQ #${row.boq_id}`,
+          performed_by: req.body.user_id || null,
+          performed_by_name: req.body.user_name || null,
+          project_id,
+          meta: { client: "lodha", pdf_import: true, filename: req.file.originalname },
+        });
+      }
     }
 
     return res.json({
@@ -1688,7 +1696,7 @@ router.post("/parse-pdf/hiranandani", upload.single("boq_file"), async (req, res
   }
 
   const filePath = path.join(uploadDir, req.file.filename);
-  const { project_id, save, category } = req.body;
+  const { project_id, project_name, save, category } = req.body;
   const shouldSave = save === "true" || save === true;
 
   try {
@@ -1699,9 +1707,10 @@ router.post("/parse-pdf/hiranandani", upload.single("boq_file"), async (req, res
       const sql = `
         INSERT INTO boqs (category, item_no, item_code, description, unit, quantity, rate, amount, boq_file, project_id, project_name)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        RETURNING boq_id, description
       `;
       for (const item of parsedItems) {
-        await pool.query(sql, [
+        const inserted = await pool.query(sql, [
           category || item.section || null,
           item.item_no || null,
           item.sac_code || null,
@@ -1715,18 +1724,21 @@ router.post("/parse-pdf/hiranandani", upload.single("boq_file"), async (req, res
           project_name || null,
         ]);
         savedCount++;
-      }
 
-      logActivity({
-        action: "created",
-        entity_type: "boq",
-        entity_id: null,
-        entity_name: `Hiranandani BOQ PDF Import — ${req.file.originalname}`,
-        performed_by: req.body.user_id || null,
-        performed_by_name: req.body.user_name || null,
-        project_id,
-        meta: { client: "hiranandani", items_imported: savedCount, filename: req.file.originalname },
-      });
+        // One activity entry per created row (not one for the whole batch) so
+        // created_by/created_by_name actually resolve for each boq_id afterward.
+        const row = inserted.rows[0];
+        logActivity({
+          action: "created",
+          entity_type: "boq",
+          entity_id: row.boq_id,
+          entity_name: row.description || `BOQ #${row.boq_id}`,
+          performed_by: req.body.user_id || null,
+          performed_by_name: req.body.user_name || null,
+          project_id,
+          meta: { client: "hiranandani", pdf_import: true, filename: req.file.originalname },
+        });
+      }
     }
 
     return res.json({
