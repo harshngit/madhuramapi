@@ -550,8 +550,8 @@ router.post("/create-sample", async (req, res) => {
       action: "created", entity_type: "sample",
       entity_id: sample.sample_id,
       entity_name: building_name || `Sample #${sample.sample_id}`,
-      performed_by: req.body.created_by || null,
-      performed_by_name: req.body.created_by_name || null,
+      performed_by: req.body.user_id || req.body.created_by || null,
+      performed_by_name: req.body.user_name || req.body.created_by_name || null,
       meta: { project_id },
     });
 
