@@ -80,6 +80,18 @@ const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./das
  *         updated_at:
  *           type: string
  *           format: date-time
+ *         created_by:
+ *           type: string
+ *           nullable: true
+ *         created_by_name:
+ *           type: string
+ *           nullable: true
+ *         updated_by:
+ *           type: string
+ *           nullable: true
+ *         updated_by_name:
+ *           type: string
+ *           nullable: true
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -150,6 +162,8 @@ const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./das
  *             upload_document:
  *               - file_name: "approval.pdf"
  *                 file_url: "/uploads/vendor_comparison/approval-123.pdf"
+ *             user_id: "123"
+ *             user_name: "John Doe"
  *     responses:
  *       200:
  *         description: Existing comparison (matched by project_id + pr_no) updated with the finalized decision
@@ -258,6 +272,12 @@ router.post("/", async (req, res) => {
  *     responses:
  *       200:
  *         description: List of finalized vendor comparisons for the project
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/VendorComparisonFinalize'
  *       404:
  *         description: No finalized vendor comparisons found for this project
  */

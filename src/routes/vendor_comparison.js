@@ -110,6 +110,18 @@ const upload = multer({ storage });
  *         updated_at:
  *           type: string
  *           format: date-time
+ *         created_by:
+ *           type: string
+ *           nullable: true
+ *         created_by_name:
+ *           type: string
+ *           nullable: true
+ *         updated_by:
+ *           type: string
+ *           nullable: true
+ *         updated_by_name:
+ *           type: string
+ *           nullable: true
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -231,6 +243,8 @@ router.post("/upload", upload.array("files"), (req, res) => {
  *                     sgst: 9
  *                     cgst: 9
  *                     payment_terms: "100% within 30 days of delivery"
+ *             user_id: "123"
+ *             user_name: "John Doe"
  *     responses:
  *       201:
  *         description: Created
@@ -302,6 +316,12 @@ router.post("/", async (req, res) => {
  *     responses:
  *       200:
  *         description: List of vendor comparisons
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/VendorComparison'
  */
 router.get("/", async (req, res) => {
   try {
@@ -358,6 +378,12 @@ router.get("/", async (req, res) => {
  *     responses:
  *       200:
  *         description: List of vendor comparisons for the project
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/VendorComparison'
  *       404:
  *         description: No vendor comparisons found for this project
  */
@@ -401,6 +427,10 @@ router.get("/project/:projectId", async (req, res) => {
  *     responses:
  *       200:
  *         description: Details of the vendor comparison
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/VendorComparison'
  *       404:
  *         description: Not found
  */
