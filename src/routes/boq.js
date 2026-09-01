@@ -696,6 +696,11 @@ router.post("/", upload.single("boq_file"), async (req, res) => {
  *               boq_file:
  *                 type: string
  *                 format: binary
+ *               user_id:
+ *                 type: string
+ *                 description: Who is creating this BOQ item (recorded as created_by)
+ *               user_name:
+ *                 type: string
  *     responses:
  *       201:
  *         description: Lodha BOQ item created
@@ -852,6 +857,11 @@ router.post("/lodha", upload.single("boq_file"), async (req, res) => {
  *               boq_file:
  *                 type: string
  *                 format: binary
+ *               user_id:
+ *                 type: string
+ *                 description: Who is creating this BOQ item (recorded as created_by)
+ *               user_name:
+ *                 type: string
  *     responses:
  *       201:
  *         description: Hiranandani BOQ item created
@@ -1000,6 +1010,11 @@ router.post("/hiranandani", upload.single("boq_file"), async (req, res) => {
  *               boq_file:
  *                 type: string
  *                 format: binary
+ *               user_id:
+ *                 type: string
+ *                 description: Who is creating this BOQ item (recorded as created_by)
+ *               user_name:
+ *                 type: string
  *     responses:
  *       201:
  *         description: Rustomjee BOQ item created
@@ -1163,6 +1178,15 @@ router.post("/rustomjee", upload.single("boq_file"), async (req, res) => {
  *                 type: string
  *                 format: binary
  *                 description: Optional single PDF/reference file attached to every created row
+ *               user_id:
+ *                 type: string
+ *                 description: |
+ *                   Who is creating these BOQ items. Note: recorded once against
+ *                   this bulk-import event (not per individual boq_id), so
+ *                   created_by/created_by_name on the resulting rows (via
+ *                   GET /api/boq/:id) will not reflect this value.
+ *               user_name:
+ *                 type: string
  *     responses:
  *       201:
  *         description: BOQ items created

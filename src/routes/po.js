@@ -206,10 +206,10 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *               status:
  *                 type: string
  *                 default: created
- *               created_by:
+ *               user_id:
  *                 type: string
  *                 description: Who is creating this PO (recorded as created_by)
- *               created_by_name:
+ *               user_name:
  *                 type: string
  *     responses:
  *       201:
@@ -304,8 +304,8 @@ router.post("/", async (req, res) => {
       entity_type: "po",
       entity_id: result.rows[0].po_id,
       entity_name: `PO #${result.rows[0].po_id}`,
-      performed_by: req.body.created_by || null,
-      performed_by_name: req.body.created_by_name || null,
+      performed_by: req.body.user_id || req.body.created_by || null,
+      performed_by_name: req.body.user_name || req.body.created_by_name || null,
       meta: {
         project_id: result.rows[0].project_id,
         sample_id: result.rows[0].sample_id,

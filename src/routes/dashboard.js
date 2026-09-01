@@ -122,15 +122,22 @@ function logActivity({
 // scoped by entity_type (matching what that section passes to logActivity)
 // and entity_id (the record's id, string-compared so alphanumeric ids like
 // sample_id/installation_id work the same as numeric ones).
+//
+// If a row's performed_by_name is missing (the caller only sent user_id, not
+// user_name, at the time), it's looked up live from auth_users.name by
+// performed_by (user_id) instead of coming back null.
 async function getEntityHistory(entityType, entityId, { limit = 50, offset = 0 } = {}) {
   const safeLimit  = Math.min(Math.max(parseInt(limit)  || 50, 1), 200);
   const safeOffset = Math.max(parseInt(offset) || 0, 0);
 
   const [rows, countResult] = await Promise.all([
     pool.query(
-      `SELECT * FROM activity_log
-        WHERE entity_type = $1 AND entity_id = $2
-        ORDER BY created_at DESC
+      `SELECT h.*,
+              COALESCE(NULLIF(h.performed_by_name, ''), au.name) AS performed_by_name
+         FROM activity_log h
+         LEFT JOIN auth_users au ON au.user_id::text = h.performed_by
+        WHERE h.entity_type = $1 AND h.entity_id = $2
+        ORDER BY h.created_at DESC
         LIMIT $3 OFFSET $4`,
       [entityType, String(entityId), safeLimit, safeOffset]
     ),
@@ -184,6 +191,10 @@ async function getEntityHistory(entityType, entityId, { limit = 50, offset = 0 }
 // the record was never updated). Used by every module's GET (list) and
 // GET (by id) endpoints.
 //
+// If the stored performed_by_name is missing (the caller only sent user_id,
+// not user_name, at create/update time), it's looked up live from
+// auth_users.name by performed_by (user_id) instead of coming back null.
+//
 // One batched query per call (not per row) — safe to use on list endpoints.
 // `getId(row)` extracts each row's id in whatever field that table uses
 // (pr_id, po_id, sample_id, etc.); ids are string-compared against
@@ -209,12 +220,14 @@ async function attachCreatedUpdatedBy(rows, entityType, getId = (r) => r.id) {
         ORDER BY entity_id, created_at DESC
      )
      SELECT COALESCE(c.entity_id, u.entity_id) AS entity_id,
-            c.performed_by      AS created_by,
-            c.performed_by_name AS created_by_name,
-            u.performed_by      AS updated_by,
-            u.performed_by_name AS updated_by_name
+            c.performed_by                                      AS created_by,
+            COALESCE(NULLIF(c.performed_by_name, ''), cu.name)   AS created_by_name,
+            u.performed_by                                      AS updated_by,
+            COALESCE(NULLIF(u.performed_by_name, ''), uu.name)   AS updated_by_name
        FROM created c
-       FULL OUTER JOIN updated u ON c.entity_id = u.entity_id`,
+       FULL OUTER JOIN updated u ON c.entity_id = u.entity_id
+       LEFT JOIN auth_users cu ON cu.user_id::text = c.performed_by
+       LEFT JOIN auth_users uu ON uu.user_id::text = u.performed_by`,
     [entityType, ids]
   );
 

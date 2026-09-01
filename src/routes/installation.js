@@ -498,7 +498,7 @@ router.get("/:id", async (req, res) => {
  *               item_description: { type: array, items: { type: object } }
  *               add_fields:       { type: array }
  *               project_name:     { type: string, description: "Used for movement/history logging only" }
- *               user_id:          { type: string }
+ *               user_id:          { type: string, description: "Who is creating this installation (recorded as created_by)" }
  *               user_name:        { type: string }
  *     responses:
  *       200:

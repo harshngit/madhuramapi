@@ -67,9 +67,11 @@ const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./das
  *               status:
  *                 type: string
  *                 enum: [active, inactive, blocked]
- *               created_by:
+ *               user_id:
  *                 type: string
  *                 description: Who is creating this vendor (recorded as created_by)
+ *               user_name:
+ *                 type: string
  *     responses:
  *       201:
  *         description: Vendor created successfully
@@ -106,8 +108,8 @@ router.post("/", async (req, res) => {
       entity_type: "vendor",
       entity_id: result.rows[0].vendor_id,
       entity_name: result.rows[0].vendor_name,
-      performed_by: req.body.created_by || null,
-      performed_by_name: req.body.created_by_name || null,
+      performed_by: req.body.user_id || req.body.created_by || null,
+      performed_by_name: req.body.user_name || req.body.created_by_name || null,
       meta: {},
     });
   } catch (error) {

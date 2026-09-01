@@ -738,6 +738,8 @@ router.post("/import/excel", uploadExcel.single("file"), async (req, res) => {
  *               last_date_revised_offer:  { type: string, format: date }
  *               is_revised_offer:         { type: boolean, default: false }
  *               notes:                    { type: string }
+ *               user_id:                  { type: string, description: "Who is creating this quotation (recorded as created_by; created_by/created_by_name below also accepted for backward compatibility)" }
+ *               user_name:                { type: string }
  *               created_by:               { type: string }
  *               created_by_name:          { type: string }
  *               items:
@@ -791,8 +793,11 @@ router.post("/", async (req, res) => {
       project_name, client_name, quotation_no, quotation_date,
       gst_percentage = 18, boq_files = [], drawing_files = [], last_date_revised_offer,
       is_revised_offer = false, notes, created_by, created_by_name,
+      user_id, user_name,
       items: rawItems = [],
     } = req.body;
+    const resolvedCreatedBy     = created_by      || user_id   || null;
+    const resolvedCreatedByName = created_by_name || user_name || null;
 
     // ── Server-side recalculation (mirrors QuotesCreate.jsx) ────────────────
     // Fetch active field definitions so we know which dynamic fields are
@@ -822,7 +827,7 @@ router.post("/", async (req, res) => {
         totalAmount, gst_percentage, gstAmount, grandTotal,
         JSON.stringify(boq_files), JSON.stringify(drawing_files),
         last_date_revised_offer || null,
-        is_revised_offer, notes || null, created_by || null, created_by_name || null,
+        is_revised_offer, notes || null, resolvedCreatedBy, resolvedCreatedByName,
       ]
     );
 
@@ -833,7 +838,7 @@ router.post("/", async (req, res) => {
     logActivity({
       action: "created", entity_type: "quotation",
       entity_id: quotation.id, entity_name: quotation.project_name,
-      performed_by: created_by || null, performed_by_name: created_by_name || null,
+      performed_by: resolvedCreatedBy, performed_by_name: resolvedCreatedByName,
     });
 
     res.status(201).json({
@@ -1126,7 +1131,27 @@ router.get("/:id", async (req, res) => {
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/QuotationCreateBody'
+ *             type: object
+ *             properties:
+ *               project_name:             { type: string }
+ *               client_name:              { type: string }
+ *               quotation_no:             { type: string }
+ *               quotation_date:           { type: string, format: date }
+ *               gst_percentage:           { type: number, default: 18 }
+ *               boq_files:                { type: array, items: { type: string } }
+ *               drawing_files:            { type: array, items: { type: string } }
+ *               last_date_revised_offer:  { type: string, format: date }
+ *               is_revised_offer:         { type: boolean }
+ *               status:                   { type: string, enum: [draft, pending, sent, approved, rejected] }
+ *               notes:                    { type: string }
+ *               user_id:                  { type: string, description: "Who is making this update (recorded as updated_by; updated_by/updated_by_name below also accepted for backward compatibility)" }
+ *               user_name:                { type: string }
+ *               updated_by:               { type: string }
+ *               updated_by_name:          { type: string }
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
  *     responses:
  *       200:
  *         description: Quotation updated
@@ -1143,8 +1168,11 @@ router.put("/:id", async (req, res) => {
       project_name, client_name, quotation_no, quotation_date,
       gst_percentage = 18, boq_files = [], drawing_files = [], last_date_revised_offer,
       is_revised_offer, status, notes, updated_by, updated_by_name,
+      user_id, user_name,
       items: rawItems = [],
     } = req.body;
+    const resolvedUpdatedBy     = updated_by      || user_id   || null;
+    const resolvedUpdatedByName = updated_by_name || user_name || null;
 
     const check = await client.query("SELECT id, edit_history FROM quotations WHERE id = $1", [id]);
     if (check.rows.length === 0) {
@@ -1162,8 +1190,8 @@ router.put("/:id", async (req, res) => {
 
     const currentHistory = check.rows[0].edit_history || [];
     const newHistoryEntry = {
-      updated_by: updated_by || null,
-      updated_by_name: updated_by_name || null,
+      updated_by: resolvedUpdatedBy,
+      updated_by_name: resolvedUpdatedByName,
       updated_at: new Date().toISOString(),
       action: "Quotation updated",
     };
@@ -1202,7 +1230,7 @@ router.put("/:id", async (req, res) => {
         last_date_revised_offer || null,
         is_revised_offer != null ? is_revised_offer : null,
         status || null, notes || null,
-        updated_by || null, updated_by_name || null,
+        resolvedUpdatedBy, resolvedUpdatedByName,
         JSON.stringify(updatedHistory), id,
       ]
     );
@@ -1215,7 +1243,7 @@ router.put("/:id", async (req, res) => {
     logActivity({
       action: "updated", entity_type: "quotation",
       entity_id: id, entity_name: project_name,
-      performed_by: updated_by || null, performed_by_name: updated_by_name || null,
+      performed_by: resolvedUpdatedBy, performed_by_name: resolvedUpdatedByName,
     });
 
     res.json({ message: "Quotation updated successfully", quotation: quotResult.rows[0] });
