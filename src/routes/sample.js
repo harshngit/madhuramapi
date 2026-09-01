@@ -431,6 +431,8 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                 value: 380.00
  *             add_fields: []
  *             sample_file: ["/uploads/sample/1699999999-123456789.pdf"]
+ *             user_id: "123"
+ *             user_name: "John Doe"
  *     responses:
  *       201:
  *         description: Sample created successfully; linked inventory/BOQ items auto-deducted
@@ -479,6 +481,10 @@ router.post("/upload", upload.array("file"), (req, res) => {
  *                 sample_file:      { type: array, items: { type: string }, description: "Array of file URLs (see POST /api/sample/upload)" }
  *                 created_at:       { type: string, format: date-time }
  *                 updated_at:       { type: string, format: date-time }
+ *                 created_by:       { type: string, nullable: true }
+ *                 created_by_name:  { type: string, nullable: true }
+ *                 updated_by:       { type: string, nullable: true }
+ *                 updated_by_name:  { type: string, nullable: true }
  *       400:
  *         description: Insufficient inventory stock, invalid project_id, or bad data (BOQ quantity is never blocked — remaining_quantity can go negative)
  *       500:
