@@ -243,7 +243,8 @@ async function enrichWithBoqInfo(installations) {
  *             properties:
  *               installation_id:  { type: string, example: "INSTALL-001", description: "Unique installation ID provided by the frontend (can be alphanumeric)" }
  *               project_id:       { type: integer, example: 1 }
- *               flats:            { type: string,  example: "A-101, A-102" }
+ *               sample_id:        { type: string, example: "SAMPLE-001", description: "Link this installation back to the sample it came from (samples.sample_id), optional" }
+ *               flats:            { type: string,  example: "A-101, A-102", description: "Flats covered by this installation as a whole (free-text summary) — not to be confused with item_description[].flats below, which is the room-wise quantity breakdown for one item line" }
  *               building_name:    { type: string,  example: "Block A" }
  *               site_name:        { type: string,  example: "Main Site" }
  *               location:
@@ -274,6 +275,24 @@ async function enrichWithBoqInfo(installations) {
  *                     issued_qty:    { type: number,  example: 100,  description: "Qty to deduct from inventory (defaults to quantity)" }
  *                     boq_id:        { type: integer, example: 7,    description: "Link to a BOQ item (boqs.boq_id)" }
  *                     boq_issued_qty: { type: number, example: 100,  description: "Qty to consume from the BOQ item's remaining quantity (defaults to quantity)" }
+ *                     flats:
+ *                       type: array
+ *                       description: |
+ *                         Room-wise quantity used for THIS item line, broken down per flat.
+ *                         Each object has a `flat_no` plus one or more free-form room/area
+ *                         type keys (e.g. "C+K", "M") mapped to the quantity used in that
+ *                         room, and a `Total` for that flat. The room/area keys are not
+ *                         fixed — they vary by project — so only flat_no and Total are
+ *                         formally typed below; any other numeric key is accepted as-is.
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           flat_no: { type: string, example: "202" }
+ *                           Total:   { type: number, example: 2 }
+ *                         additionalProperties:
+ *                           type: number
+ *                           description: Dynamic room/area type key (e.g. "C+K", "M") mapped to quantity used in that room
+ *                         example: { flat_no: "202", "C+K": 1, "M": 1, Total: 2 }
  *               add_fields:       { type: array }
  *     responses:
  *       201:
@@ -289,7 +308,7 @@ router.post("/", async (req, res) => {
     await client.query("BEGIN");
 
     const {
-      installation_id, project_id, flats, building_name, site_name,
+      installation_id, project_id, sample_id, flats, building_name, site_name,
       location, work_done, item_description, add_fields,
     } = req.body;
 
@@ -300,12 +319,12 @@ router.post("/", async (req, res) => {
 
     const result = await client.query(
       `INSERT INTO installations
-         (installation_id, project_id, flats, building_name, site_name, location, work_done, item_description, add_fields)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         (installation_id, project_id, sample_id, flats, building_name, site_name, location, work_done, item_description, add_fields)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
        RETURNING *`,
       [
         installation_id,
-        project_id, flats || null, building_name, site_name,
+        project_id, sample_id || null, flats || null, building_name, site_name,
         location ? JSON.stringify(location) : null,
         work_done,
         item_description ? JSON.stringify(item_description) : JSON.stringify([]),
@@ -433,6 +452,44 @@ router.get("/project/:projectId", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/installation/sample/:sampleId
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/installation/sample/{sampleId}:
+ *   get:
+ *     summary: Get all installations linked to a specific sample
+ *     tags: [Installation]
+ *     parameters:
+ *       - in: path
+ *         name: sampleId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: List of installations for the sample
+ *       500:
+ *         description: Server error
+ */
+router.get("/sample/:sampleId", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM installations WHERE sample_id = $1 ORDER BY created_at DESC",
+      [req.params.sampleId]
+    );
+    const installations = result.rows.map(inst => {
+      const items = Array.isArray(inst.item_description) ? inst.item_description : [];
+      const linked = items.length > 0 && items.every(i => i.inventory_id);
+      return { ...inst, linked };
+    });
+    res.json(await enrichWithBoqInfo(installations));
+  } catch (error) {
+    console.error("Error fetching installations by sample:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/installation/:id
 // ─────────────────────────────────────────────────────────────────────────────
 /**
@@ -490,12 +547,23 @@ router.get("/:id", async (req, res) => {
  *           schema:
  *             type: object
  *             properties:
+ *               sample_id:        { type: string, description: "Link this installation back to the sample it came from (samples.sample_id)" }
  *               flats:            { type: string }
  *               building_name:    { type: string }
  *               site_name:        { type: string }
  *               location:         { type: object }
  *               work_done:        { type: string }
- *               item_description: { type: array, items: { type: object } }
+ *               item_description:
+ *                 type: array
+ *                 description: Full replacement list of item lines. Only items with a NEW (not previously issued) inventory_id/boq_id trigger a deduction.
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     flats:
+ *                       type: array
+ *                       description: Room-wise quantity used for this item line — see POST /api/installation for the full shape
+ *                       items:
+ *                         type: object
  *               add_fields:       { type: array }
  *               project_name:     { type: string, description: "Used for movement/history logging only" }
  *               user_id:          { type: string, description: "Who is creating this installation (recorded as created_by)" }
@@ -515,7 +583,7 @@ router.put("/:id", async (req, res) => {
 
     const { id } = req.params;
     const {
-      flats, building_name, site_name, location,
+      sample_id, flats, building_name, site_name, location,
       work_done, item_description, add_fields,
     } = req.body;
 
@@ -548,17 +616,19 @@ router.put("/:id", async (req, res) => {
 
     const result = await client.query(
       `UPDATE installations SET
-         flats            = COALESCE($1, flats),
-         building_name    = COALESCE($2, building_name),
-         site_name        = COALESCE($3, site_name),
-         location         = COALESCE($4, location),
-         work_done        = COALESCE($5, work_done),
-         item_description = COALESCE($6, item_description),
-         add_fields       = COALESCE($7, add_fields),
+         sample_id        = COALESCE($1, sample_id),
+         flats            = COALESCE($2, flats),
+         building_name    = COALESCE($3, building_name),
+         site_name        = COALESCE($4, site_name),
+         location         = COALESCE($5, location),
+         work_done        = COALESCE($6, work_done),
+         item_description = COALESCE($7, item_description),
+         add_fields       = COALESCE($8, add_fields),
          updated_at       = CURRENT_TIMESTAMP
-       WHERE installation_id = $8
+       WHERE installation_id = $9
        RETURNING *`,
       [
+        sample_id || null,
         flats || null,
         building_name || null,
         site_name || null,
