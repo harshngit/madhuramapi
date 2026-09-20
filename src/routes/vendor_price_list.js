@@ -361,7 +361,8 @@ router.get("/compare", async (req, res) => {
     ${chosenPriceListsCte}
     SELECT
       v.vendor_id,
-      v.vendor_name,
+      v.vendor_details,
+      (v.vendor_details->0->>'vendor_name') AS vendor_name,
       v.vendor_company_name,
       v.project_id,
       vpl.price_list_id,
@@ -386,7 +387,7 @@ router.get("/compare", async (req, res) => {
     ${outerWhere.length ? `WHERE ${outerWhere.join(" AND ")}` : ""}
     ORDER BY
       LOWER(COALESCE(vpli.items_name, vpli.product_name, '')) ASC,
-      LOWER(COALESCE(v.vendor_name, '')) ASC,
+      LOWER(COALESCE(v.vendor_details->0->>'vendor_name', '')) ASC,
       vpl.created_at DESC,
       vpli.item_id ASC
     LIMIT ${limitParam} OFFSET ${offsetParam}

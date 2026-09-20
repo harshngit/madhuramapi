@@ -17,3 +17,4 @@ DO $$ BEGIN
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_installations_sample_id ON installations(sample_id);
+  

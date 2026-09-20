@@ -285,7 +285,7 @@ router.get("/project/:projectId", async (req, res) => {
   try {
     const { projectId } = req.params;
     const result = await pool.query(
-      `SELECT vc.*, pr.project_name as pr_name, v.vendor_name as approved_vendor_name
+      `SELECT vc.*, pr.project_name as pr_name, (v.vendor_details->0->>'vendor_name') as approved_vendor_name
          FROM vendor_comparisons vc
          LEFT JOIN purchase_requisitions pr ON vc.pr_no = pr.pr_id
          LEFT JOIN vendors v ON vc.approved_vendor = v.vendor_id
@@ -331,7 +331,7 @@ router.get("/project/:projectId", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT vc.*, pr.project_name as pr_name, v.vendor_name as approved_vendor_name
+      `SELECT vc.*, pr.project_name as pr_name, (v.vendor_details->0->>'vendor_name') as approved_vendor_name
          FROM vendor_comparisons vc
          LEFT JOIN purchase_requisitions pr ON vc.pr_no = pr.pr_id
          LEFT JOIN vendors v ON vc.approved_vendor = v.vendor_id

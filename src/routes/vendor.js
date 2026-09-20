@@ -3,6 +3,14 @@ const router = express.Router();
 const { pool } = require("../db");
 const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./dashboard"); // adjust path if needed
 
+// Display name for activity_log entries — vendor_name moved from a single
+// scalar column into vendor_details[] (multiple contacts), so there's no
+// longer one canonical "the" vendor name; prefer the company name, then the
+// first contact's name, then a fallback.
+function vendorDisplayName(row) {
+  return row.vendor_company_name || row.vendor_details?.[0]?.vendor_name || `Vendor #${row.vendor_id}`;
+}
+
 /**
  * @swagger
  * tags:
@@ -22,13 +30,19 @@ const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./das
  *       properties:
  *         vendor_id:
  *           type: integer
- *         vendor_name:
- *           type: string
+ *         vendor_details:
+ *           type: array
+ *           description: One or more contact people for this vendor company
+ *           items:
+ *             type: object
+ *             properties:
+ *               vendor_name:
+ *                 type: string
+ *               vendor_email:
+ *                 type: string
+ *               mobile_number:
+ *                 type: string
  *         vendor_company_name:
- *           type: string
- *         vendor_email:
- *           type: string
- *         mobile_number:
  *           type: string
  *         location:
  *           type: string
@@ -52,16 +66,25 @@ const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./das
  *         application/json:
  *           schema:
  *             type: object
- *             required: [vendor_name]
  *             properties:
- *               vendor_name:
- *                 type: string
+ *               vendor_details:
+ *                 type: array
+ *                 description: One or more contact people for this vendor company
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     vendor_name:
+ *                       type: string
+ *                       example: "Ramesh Shah"
+ *                     vendor_email:
+ *                       type: string
+ *                       example: "ramesh@abctraders.com"
+ *                     mobile_number:
+ *                       type: string
+ *                       example: "9876543210"
  *               vendor_company_name:
  *                 type: string
- *               vendor_email:
- *                 type: string
- *               mobile_number:
- *                 type: string
+ *                 example: "ABC Traders"
  *               location:
  *                 type: string
  *               status:
@@ -72,6 +95,16 @@ const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./das
  *                 description: Who is creating this vendor (recorded as created_by)
  *               user_name:
  *                 type: string
+ *           example:
+ *             vendor_details:
+ *               - vendor_name: "Ramesh Shah"
+ *                 vendor_email: "ramesh@abctraders.com"
+ *                 mobile_number: "9876543210"
+ *             vendor_company_name: "ABC Traders"
+ *             location: "Mumbai"
+ *             status: "active"
+ *             user_id: "123"
+ *             user_name: "John Doe"
  *     responses:
  *       201:
  *         description: Vendor created successfully
@@ -80,10 +113,8 @@ const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./das
  */
 router.post("/", async (req, res) => {
   const {
-    vendor_name,
+    vendor_details,
     vendor_company_name,
-    vendor_email,
-    mobile_number,
     location,
     status,
   } = req.body;
@@ -91,13 +122,11 @@ router.post("/", async (req, res) => {
   try {
     const result = await pool.query(
       `INSERT INTO vendors (
-        vendor_name, vendor_company_name, vendor_email, mobile_number, location, status
-      ) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        vendor_details, vendor_company_name, location, status
+      ) VALUES ($1, $2, $3, $4) RETURNING *`,
       [
-        vendor_name,
+        JSON.stringify(vendor_details || []),
         vendor_company_name,
-        vendor_email,
-        mobile_number,
         location,
         status || "active",
       ]
@@ -107,7 +136,7 @@ router.post("/", async (req, res) => {
       action: "created",
       entity_type: "vendor",
       entity_id: result.rows[0].vendor_id,
-      entity_name: result.rows[0].vendor_name,
+      entity_name: vendorDisplayName(result.rows[0]),
       performed_by: req.body.user_id || req.body.created_by || null,
       performed_by_name: req.body.user_name || req.body.created_by_name || null,
       meta: {},
@@ -144,7 +173,7 @@ router.get("/", async (req, res) => {
  * @swagger
  * /api/vendors/search:
  *   get:
- *     summary: Search vendors by name (partial match, case-insensitive)
+ *     summary: Search vendors by contact name (partial match, case-insensitive, matches any entry in vendor_details)
  *     tags: [Vendors]
  *     parameters:
  *       - in: query
@@ -152,7 +181,7 @@ router.get("/", async (req, res) => {
  *         required: true
  *         schema:
  *           type: string
- *         description: Vendor name to search for
+ *         description: Vendor contact name to search for (matches vendor_details[].vendor_name)
  *     responses:
  *       200:
  *         description: Matching vendors
@@ -166,7 +195,12 @@ router.get("/search", async (req, res) => {
   }
   try {
     const result = await pool.query(
-      "SELECT * FROM vendors WHERE vendor_name ILIKE $1 ORDER BY created_at DESC",
+      `SELECT * FROM vendors v
+        WHERE EXISTS (
+          SELECT 1 FROM jsonb_array_elements(v.vendor_details) elem
+           WHERE elem->>'vendor_name' ILIKE $1
+        )
+        ORDER BY created_at DESC`,
       [`%${name}%`]
     );
     res.json(await attachCreatedUpdatedBy(result.rows, "vendor", (r) => r.vendor_id));
@@ -229,13 +263,19 @@ router.get("/:id", async (req, res) => {
  *           schema:
  *             type: object
  *             properties:
- *               vendor_name:
- *                 type: string
+ *               vendor_details:
+ *                 type: array
+ *                 description: One or more contact people for this vendor company (full replacement of the array)
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     vendor_name:
+ *                       type: string
+ *                     vendor_email:
+ *                       type: string
+ *                     mobile_number:
+ *                       type: string
  *               vendor_company_name:
- *                 type: string
- *               vendor_email:
- *                 type: string
- *               mobile_number:
  *                 type: string
  *               location:
  *                 type: string
@@ -256,10 +296,8 @@ router.get("/:id", async (req, res) => {
 router.put("/:id", async (req, res) => {
   const { id } = req.params;
   const {
-    vendor_name,
+    vendor_details,
     vendor_company_name,
-    vendor_email,
-    mobile_number,
     location,
     status,
   } = req.body;
@@ -267,19 +305,15 @@ router.put("/:id", async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE vendors SET
-        vendor_name = COALESCE($1, vendor_name),
+        vendor_details = COALESCE($1, vendor_details),
         vendor_company_name = COALESCE($2, vendor_company_name),
-        vendor_email = COALESCE($3, vendor_email),
-        mobile_number = COALESCE($4, mobile_number),
-        location = COALESCE($5, location),
-        status = COALESCE($6, status),
+        location = COALESCE($3, location),
+        status = COALESCE($4, status),
         updated_at = CURRENT_TIMESTAMP
-      WHERE vendor_id = $7 RETURNING *`,
+      WHERE vendor_id = $5 RETURNING *`,
       [
-        vendor_name,
+        vendor_details ? JSON.stringify(vendor_details) : null,
         vendor_company_name,
-        vendor_email,
-        mobile_number,
         location,
         status,
         id,
@@ -296,7 +330,7 @@ router.put("/:id", async (req, res) => {
       action: "updated",
       entity_type: "vendor",
       entity_id: id,
-      entity_name: result.rows[0].vendor_name,
+      entity_name: vendorDisplayName(result.rows[0]),
       performed_by: req.body.user_id || null,
       performed_by_name: req.body.user_name || null,
       meta: { updates: req.body }
@@ -362,7 +396,7 @@ router.patch("/:id/status", async (req, res) => {
       action: "updated",
       entity_type: "vendor",
       entity_id: id,
-      entity_name: result.rows[0].vendor_name,
+      entity_name: vendorDisplayName(result.rows[0]),
       performed_by: req.body.user_id || null,
       performed_by_name: req.body.user_name || null,
       meta: { status_change: status }
@@ -405,7 +439,7 @@ router.delete("/:id", async (req, res) => {
       action: "deleted",
       entity_type: "vendor",
       entity_id: id,
-      entity_name: result.rows[0].vendor_name,
+      entity_name: vendorDisplayName(result.rows[0]),
       performed_by: req.query.user_id || null,
       performed_by_name: req.query.user_name || null,
       meta: {}
