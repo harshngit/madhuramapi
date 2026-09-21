@@ -62,6 +62,8 @@ const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./das
  *               sgst: { type: number }
  *               cgst: { type: number }
  *               payment_terms: { type: string }
+ *               brand_name: { type: string }
+ *               specification: { type: string }
  *         upload_document:
  *           type: array
  *           items:
@@ -133,6 +135,8 @@ const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./das
  *                     sgst: { type: number }
  *                     cgst: { type: number }
  *                     payment_terms: { type: string }
+ *                     brand_name: { type: string }
+ *                     specification: { type: string }
  *               upload_document:
  *                 type: array
  *                 items:
@@ -159,6 +163,8 @@ const { logActivity, getEntityHistory, attachCreatedUpdatedBy } = require("./das
  *                 sgst: 9
  *                 cgst: 9
  *                 payment_terms: "50% advance, 50% on delivery"
+ *                 brand_name: "Havells"
+ *                 specification: "1100V grade FR/XLPE/SWA (Flat)/Al"
  *             upload_document:
  *               - file_name: "approval.pdf"
  *                 file_url: "/uploads/vendor_comparison/approval-123.pdf"
@@ -385,6 +391,8 @@ router.get("/:id", async (req, res) => {
  *                     sgst: { type: number }
  *                     cgst: { type: number }
  *                     payment_terms: { type: string }
+ *                     brand_name: { type: string }
+ *                     specification: { type: string }
  *               upload_document: { type: array, items: { type: object } }
  *               user_id: { type: string, description: "Who is making this update (recorded as updated_by)" }
  *               user_name: { type: string }

@@ -80,15 +80,18 @@ async function insertItems(client, prId, items, {
       item.boq_id || null,            // ← new column
       item.boq_qty != null ? Number(item.boq_qty) : null,  // ← new column
       item.item_no || null,           // ← stored as sent, independent of boq_item_code
-      item.quantity != null ? Number(item.quantity) : null  // ← new column
+      item.quantity != null ? Number(item.quantity) : null,  // ← new column
+      item.specification || null,     // ← new column
+      item.brand_name || null         // ← new column
     );
-    placeholders.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
+    placeholders.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
   }
 
   await client.query(
     `INSERT INTO purchase_requisition_items
        (pr_id, material_description, unit, req_qty, make,
-        place_of_utilisation, inventory_id, issued_qty, boq_id, boq_qty, item_no, quantity)
+        place_of_utilisation, inventory_id, issued_qty, boq_id, boq_qty, item_no, quantity,
+        specification, brand_name)
      VALUES ${placeholders.join(", ")}`,
     values
   );
@@ -184,6 +187,8 @@ async function getPrList(whereClause, values) {
              'req_qty',             pri.req_qty,
              'quantity',            pri.quantity,
              'make',                pri.make,
+             'specification',       pri.specification,
+             'brand_name',          pri.brand_name,
              'place_of_utilisation',pri.place_of_utilisation,
              'inventory_id',        pri.inventory_id,
              'issued_qty',          pri.issued_qty,
@@ -285,6 +290,8 @@ router.post("/upload-signature", uploadSignature.single("file"), (req, res) => {
  *                     req_qty:              { type: number }
  *                     quantity:             { type: number,  description: "Plain quantity value for this line, mirrors sample items' quantity field" }
  *                     make:                 { type: string }
+ *                     brand_name:           { type: string }
+ *                     specification:        { type: string }
  *                     place_of_utilisation: { type: string }
  *                     inventory_id:         { type: integer, description: "Link to inventories item" }
  *                     issued_qty:           { type: number,  description: "Qty to deduct (default: req_qty)" }
@@ -350,6 +357,8 @@ router.post("/", async (req, res) => {
                   'req_qty',             pri.req_qty,
                   'quantity',            pri.quantity,
                   'make',                pri.make,
+                  'specification',       pri.specification,
+                  'brand_name',          pri.brand_name,
                   'place_of_utilisation',pri.place_of_utilisation,
                   'inventory_id',        pri.inventory_id,
                   'issued_qty',          pri.issued_qty,

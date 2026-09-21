@@ -163,6 +163,10 @@ router.post("/upload", upload.single("file"), (req, res) => {
  *                       type: number
  *                     remark:
  *                       type: string
+ *                     brand_name:
+ *                       type: string
+ *                     specification:
+ *                       type: string
  *                     inventory_id:
  *                       type: integer
  *                       description: Link to inventories table (optional)
@@ -501,6 +505,10 @@ router.get("/:id", async (req, res) => {
  *                     Amount:
  *                       type: number
  *                     remark:
+ *                       type: string
+ *                     brand_name:
+ *                       type: string
+ *                     specification:
  *                       type: string
  *                     inventory_id:
  *                       type: integer

@@ -86,6 +86,10 @@ const upload = multer({ storage });
  *                       type: number
  *                     payment_terms:
  *                       type: string
+ *                     brand_name:
+ *                       type: string
+ *                     specification:
+ *                       type: string
  *         approved_vendor:
  *           type: integer
  *           description: Set by Stage 2 (POST /api/vendor-comparison-finalize) — link to the chosen vendor (vendors.vendor_id)
@@ -213,6 +217,8 @@ router.post("/upload", upload.array("files"), (req, res) => {
  *                           sgst: { type: number }
  *                           cgst: { type: number }
  *                           payment_terms: { type: string }
+ *                           brand_name: { type: string }
+ *                           specification: { type: string }
  *           example:
  *             project_id: 1
  *             pr_no: 5
@@ -230,6 +236,8 @@ router.post("/upload", upload.array("files"), (req, res) => {
  *                     sgst: 9
  *                     cgst: 9
  *                     payment_terms: "50% advance, 50% on delivery"
+ *                     brand_name: "Havells"
+ *                     specification: "1100V grade FR/XLPE/SWA (Flat)/Al"
  *               - vendor_id: "18"
  *                 vendor_name: "XYZ Suppliers"
  *                 pricelist:
@@ -243,6 +251,8 @@ router.post("/upload", upload.array("files"), (req, res) => {
  *                     sgst: 9
  *                     cgst: 9
  *                     payment_terms: "100% within 30 days of delivery"
+ *                     brand_name: "Polycab"
+ *                     specification: "1100V grade FR/XLPE/SWA (Flat)/Al"
  *             user_id: "123"
  *             user_name: "John Doe"
  *     responses:
@@ -500,6 +510,8 @@ router.get("/:id", async (req, res) => {
  *                           sgst: { type: number }
  *                           cgst: { type: number }
  *                           payment_terms: { type: string }
+ *                           brand_name: { type: string }
+ *                           specification: { type: string }
  *               user_id: { type: string, description: "Who is making this update (recorded as updated_by)" }
  *               user_name: { type: string }
  *     responses:

@@ -237,6 +237,8 @@ router.post("/upload-invoice", upload.single("file"), (req, res) => {
  *                     item_no:     { type: string,  description: "BOQ item number for this line (optional, same as boqs.item_code)" }
  *                     boq_id:      { type: integer, description: "Link to a BOQ item (boqs.boq_id) — informational only, does not deduct BOQ quantity" }
  *                     boq_qty:     { type: number,  description: "Qty being delivered against that BOQ item" }
+ *                     brand_name:  { type: string }
+ *                     specification: { type: string }
  *               challan_date:     { type: string, format: date }
  *               work_order_number: { type: string }
  *               order_date:       { type: string, format: date }
@@ -564,6 +566,8 @@ router.get("/sample/:sampleId", async (req, res) => {
  *                       item_no:     { type: string, nullable: true, example: "BOQ-11" }
  *                       boq_id:      { type: integer, nullable: true, example: 54 }
  *                       boq_qty:     { type: number, nullable: true, example: 25 }
+ *                       brand_name:  { type: string, nullable: true, example: "Havells" }
+ *                       specification: { type: string, nullable: true, example: "1100V grade FR/XLPE/SWA (Flat)/Al" }
  *                 challan_date:         { type: string, format: date, nullable: true, example: "2026-08-05" }
  *                 work_order_number:    { type: string, nullable: true, example: "WO-2026-009" }
  *                 order_date:           { type: string, format: date, nullable: true, example: "2026-08-01" }
