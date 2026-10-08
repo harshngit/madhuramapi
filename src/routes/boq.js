@@ -47,6 +47,28 @@ function safeDecode(s) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// HELPER: parse merge_items into an array of boq_id integers.
+// Accepts a real array (JSON requests) or a JSON-stringified / comma-separated
+// string (multipart/form-data requests, same pattern as /bulk's `items` field).
+// Returns undefined when not provided at all, so callers can distinguish
+// "field omitted" from "field explicitly cleared" ([]).
+// ─────────────────────────────────────────────────────────────────────────────
+function parseMergeItems(raw) {
+  if (raw === undefined) return undefined;
+  if (raw === null || raw === "") return [];
+  let arr = raw;
+  if (typeof arr === "string") {
+    try {
+      arr = JSON.parse(arr);
+    } catch (_) {
+      arr = arr.split(",").map((s) => s.trim()).filter(Boolean);
+    }
+  }
+  if (!Array.isArray(arr)) return [];
+  return arr.map(Number).filter((n) => Number.isInteger(n));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PDF PARSER — Generic (original, for Lodha-style BOQ)
 //
 // Columns:  item_no | description | unit | qty
@@ -417,6 +439,10 @@ function parseHiranandaniBoqPdf(filePath) {
  *           type: integer
  *         project_name:
  *           type: string
+ *         merge_items:
+ *           type: array
+ *           items: { type: integer }
+ *           description: boq_id's of other BOQ items merged into this one
  *         created_at:
  *           type: string
  *           format: date-time
@@ -572,6 +598,12 @@ function parseHiranandaniBoqPdf(filePath) {
  *               project_name:
  *                 type: string
  *                 description: Project name (denormalized, for display convenience)
+ *               merge_items:
+ *                 type: array
+ *                 items: { type: integer }
+ *                 description: >
+ *                   boq_id's of other BOQ items merged into this one. Since this is
+ *                   multipart/form-data, send as a JSON-stringified array, e.g. "[2,3]".
  *               boq_file:
  *                 type: string
  *                 format: binary
@@ -601,13 +633,14 @@ router.post("/", upload.single("boq_file"), async (req, res) => {
     } = req.body;
 
     const boq_file = req.file ? `/uploads/boq/${req.file.filename}` : null;
+    const merge_items = parseMergeItems(req.body.merge_items) || [];
 
     const result = await pool.query(
       `INSERT INTO boqs
-         (category, item_code, item_no, description, floor, unit, quantity, rate, amount, boq_file, project_id, project_name)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         (category, item_code, item_no, description, floor, unit, quantity, rate, amount, boq_file, project_id, project_name, merge_items)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING *`,
-      [category, item_code, item_no, description, floor, unit, quantity, rate, amount, boq_file, project_id, project_name]
+      [category, item_code, item_no, description, floor, unit, quantity, rate, amount, boq_file, project_id, project_name, merge_items]
     );
 
     res.status(201).json(result.rows[0]);
@@ -1148,12 +1181,14 @@ router.post("/rustomjee", upload.single("boq_file"), async (req, res) => {
  *           "unit":        "Bags",
  *           "quantity":    40,
  *           "rate":        380,
- *           "amount":      15200
+ *           "amount":      15200,
+ *           "merge_items": [3, 4]
  *         }
  *       ]
  *       ```
  *       Only `description` is required per item — every other field is optional
- *       and defaults to `null` (or `0` for numeric fields).
+ *       and defaults to `null` (or `0` for numeric fields). `merge_items` is an
+ *       optional array of other boq_id's merged into that line (defaults to `[]`).
  *     tags: [BOQ]
  *     requestBody:
  *       required: true
@@ -1254,14 +1289,15 @@ router.post("/bulk", upload.single("boq_file"), async (req, res) => {
         parseFloat(item.amount) || 0,
         boq_file,
         parseInt(project_id),
-        project_name || null
+        project_name || null,
+        parseMergeItems(item.merge_items) || []
       );
-      placeholders.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
+      placeholders.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
     }
 
     const result = await client.query(
       `INSERT INTO boqs
-         (category, item_no, item_code, description, floor, unit, quantity, rate, amount, boq_file, project_id, project_name)
+         (category, item_no, item_code, description, floor, unit, quantity, rate, amount, boq_file, project_id, project_name, merge_items)
        VALUES ${placeholders.join(", ")}
        RETURNING *`,
       values
@@ -2086,6 +2122,13 @@ router.get("/:id", async (req, res) => {
  *                 type: number
  *               project_id:
  *                 type: integer
+ *               merge_items:
+ *                 type: array
+ *                 items: { type: integer }
+ *                 description: >
+ *                   boq_id's of other BOQ items merged into this one (replaces the
+ *                   existing list; send "[]" to clear). Since this is
+ *                   multipart/form-data, send as a JSON-stringified array, e.g. "[2,3]".
  *               boq_file:
  *                 type: string
  *                 format: binary
@@ -2121,6 +2164,12 @@ router.put("/:id", upload.single("boq_file"), async (req, res) => {
       }
     }
 
+    const mergeItems = parseMergeItems(req.body.merge_items);
+    if (mergeItems !== undefined) {
+      sets.push(`merge_items = $${n++}`);
+      vals.push(mergeItems);
+    }
+
     if (req.file) {
       sets.push(`boq_file = $${n++}`);
       vals.push(`/uploads/boq/${req.file.filename}`);
@@ -2153,6 +2202,145 @@ router.put("/:id", upload.single("boq_file"), async (req, res) => {
   } catch (err) {
     console.error("Error updating BOQ:", err);
     res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// POST /api/boq/merge-items/bulk — Set merge_items for many BOQ items at once
+//
+// merge_items tracks which OTHER boq_id's have been merged into a given BOQ
+// item (e.g. duplicate/split line items consolidated into one row). Each
+// entry here REPLACES merge_items for that boq_id — it does not append.
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @swagger
+ * /api/boq/merge-items/bulk:
+ *   post:
+ *     summary: Set merge_items for many BOQ items in a single call (replaces, does not append)
+ *     tags: [BOQ]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [merges]
+ *             properties:
+ *               merges:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [boq_id, merge_items]
+ *                   properties:
+ *                     boq_id:
+ *                       type: integer
+ *                       description: The BOQ item to update
+ *                     merge_items:
+ *                       type: array
+ *                       items: { type: integer }
+ *                       description: boq_id's of other BOQ items merged into this one (send [] to clear)
+ *               user_id:
+ *                 type: string
+ *                 description: Who is performing this merge (recorded as updated_by)
+ *               user_name:
+ *                 type: string
+ *           example:
+ *             merges:
+ *               - boq_id: 12
+ *                 merge_items: [13, 14]
+ *               - boq_id: 20
+ *                 merge_items: [21]
+ *             user_id: "123"
+ *             user_name: "John Doe"
+ *     responses:
+ *       200:
+ *         description: BOQ items updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 total: { type: integer, example: 2 }
+ *                 items:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/BOQ'
+ *       400:
+ *         description: merges missing/empty, or an entry has an invalid boq_id / merge_items / merges a boq_id into itself
+ *       404:
+ *         description: One of the boq_id's in merges does not exist
+ *       500:
+ *         description: Server error
+ */
+router.post("/merge-items/bulk", async (req, res) => {
+  const { merges, user_id, user_name } = req.body;
+
+  if (!Array.isArray(merges) || merges.length === 0) {
+    return res.status(400).json({ error: "merges is required and must be a non-empty array" });
+  }
+
+  for (let i = 0; i < merges.length; i++) {
+    const m = merges[i];
+    const boqId = m && Number(m.boq_id);
+    if (!m || !Number.isInteger(boqId)) {
+      return res.status(400).json({ error: `merges[${i}].boq_id is required and must be an integer` });
+    }
+    if (!Array.isArray(m.merge_items)) {
+      return res.status(400).json({ error: `merges[${i}].merge_items is required and must be an array` });
+    }
+    if (m.merge_items.some((x) => !Number.isInteger(Number(x)))) {
+      return res.status(400).json({ error: `merges[${i}].merge_items must only contain boq_id integers` });
+    }
+    if (m.merge_items.map(Number).includes(boqId)) {
+      return res.status(400).json({ error: `merges[${i}]: boq_id ${boqId} cannot be merged into itself` });
+    }
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const updated = [];
+    for (const m of merges) {
+      const boqId = Number(m.boq_id);
+      const mergeItems = m.merge_items.map(Number);
+
+      const result = await client.query(
+        `UPDATE boqs SET merge_items = $1, updated_at = CURRENT_TIMESTAMP WHERE boq_id = $2 RETURNING *`,
+        [mergeItems, boqId]
+      );
+
+      if (result.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: `BOQ item not found: boq_id ${boqId}` });
+      }
+
+      updated.push(result.rows[0]);
+    }
+
+    await client.query("COMMIT");
+
+    res.json({ total: updated.length, items: updated });
+
+    for (const row of updated) {
+      logActivity({
+        action: "merged",
+        entity_type: "boq",
+        entity_id: row.boq_id,
+        entity_name: row.description || `BOQ #${row.boq_id}`,
+        performed_by: user_id || null,
+        performed_by_name: user_name || null,
+        project_id: row.project_id,
+        meta: { merge_items: row.merge_items },
+      });
+    }
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error bulk merging BOQ items:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  } finally {
+    client.release();
   }
 });
 

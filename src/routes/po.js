@@ -29,6 +29,89 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPER: detect per-item price overrides vs. the selected vendor's finalized
+// pricelist (vendor_comparisons.pricelist, set by POST /api/vendor-comparison-
+// finalize). Matches PO items to pricelist lines by item_no (falling back to
+// item_code/boq_item_code) and flags any line where the Rate used on the PO
+// differs from the vendor's quoted rate.
+// ─────────────────────────────────────────────────────────────────────────────
+function detectPriceOverrides(poItems, pricelist) {
+  if (!Array.isArray(poItems) || !Array.isArray(pricelist) || pricelist.length === 0) return [];
+
+  const byKey = new Map();
+  for (const p of pricelist) {
+    const key = String(p.item_no || p.item_code || "").trim().toLowerCase();
+    if (key) byKey.set(key, p);
+  }
+  if (byKey.size === 0) return [];
+
+  const changes = [];
+  for (const item of poItems) {
+    const key = String(item.item_no || item.boq_item_code || "").trim().toLowerCase();
+    if (!key) continue;
+
+    const vendorItem = byKey.get(key);
+    if (!vendorItem) continue;
+
+    const vendorRate = vendorItem.rate !== undefined && vendorItem.rate !== null ? Number(vendorItem.rate) : null;
+    const poRate = item.Rate !== undefined && item.Rate !== null ? Number(item.Rate) : null;
+
+    if (vendorRate !== null && poRate !== null && !Number.isNaN(vendorRate) && !Number.isNaN(poRate) && vendorRate !== poRate) {
+      changes.push({
+        item_no: item.item_no || item.boq_item_code || null,
+        description: item.description || vendorItem.item_description || null,
+        vendor_name: vendorItem.vendor_name || null,
+        vendor_rate: vendorRate,
+        po_rate: poRate,
+        difference: Number((poRate - vendorRate).toFixed(2)),
+      });
+    }
+  }
+  return changes;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPER: if a PO is linked to a vendor comparison (comparison_id), compare
+// its item rates against that comparison's finalized pricelist and log an
+// activity entry (action: "price_overridden") for admins when they differ.
+// Fire-and-forget — never blocks or fails the PO create/update response.
+// ─────────────────────────────────────────────────────────────────────────────
+async function logPriceOverridesIfAny(po, userId, userName) {
+  if (!po || !po.comparison_id) return;
+  try {
+    const vc = await pool.query(
+      `SELECT pricelist, approved_vendor FROM vendor_comparisons WHERE comparison_id = $1`,
+      [po.comparison_id]
+    );
+    if (vc.rows.length === 0) return;
+
+    const pricelist = Array.isArray(vc.rows[0].pricelist) ? vc.rows[0].pricelist : [];
+    const poItems = Array.isArray(po.items) ? po.items : [];
+    const changes = detectPriceOverrides(poItems, pricelist);
+
+    if (changes.length === 0) return;
+
+    logActivity({
+      action: "price_overridden",
+      entity_type: "po",
+      entity_id: po.po_id,
+      entity_name: `PO #${po.po_id}${po.order_no ? ` (${po.order_no})` : ""}`,
+      performed_by: userId || null,
+      performed_by_name: userName || null,
+      project_id: po.project_id,
+      meta: {
+        comparison_id: po.comparison_id,
+        vendor_id: vc.rows[0].approved_vendor,
+        order_no: po.order_no,
+        changes,
+      },
+    });
+  } catch (err) {
+    console.error("Error checking PO price overrides:", err.message);
+  }
+}
+
 /**
  * @swagger
  * tags:
@@ -331,6 +414,12 @@ router.post("/", async (req, res) => {
         company_name: result.rows[0].company_name,
       },
     });
+
+    logPriceOverridesIfAny(
+      result.rows[0],
+      req.body.user_id || req.body.created_by,
+      req.body.user_name || req.body.created_by_name
+    );
   } catch (error) {
     console.error("Error creating PO:", error);
     res.status(500).json({ error: error.message });
@@ -403,6 +492,131 @@ router.get("/sample/:sampleId", async (req, res) => {
     res.json(pos);
   } catch (error) {
     console.error("Error fetching POs by sample:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/po/price-change-logs — admin view: every PO whose item rates were
+// overridden away from the selected vendor's finalized comparison pricelist.
+// Registered ahead of GET /:id so "price-change-logs" is never swallowed as
+// an :id value.
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/po/price-change-logs:
+ *   get:
+ *     summary: Get the log of PO item price overrides vs. the selected vendor's finalized pricelist
+ *     description: |
+ *       Whenever a PO is created or updated with a `comparison_id`, every item's
+ *       `Rate` is compared against the matching line (by item_no) in that vendor
+ *       comparison's finalized pricelist (set by POST /api/vendor-comparison-finalize).
+ *       If the rate actually used differs from what the selected vendor quoted,
+ *       an entry is recorded here so admins can see what price changed, on which
+ *       PO, and by how much.
+ *     tags: [PO]
+ *     parameters:
+ *       - in: query
+ *         name: project_id
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: po_id
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Price override log entries, newest first
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 total: { type: integer }
+ *                 limit: { type: integer }
+ *                 offset: { type: integer }
+ *                 logs:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:                { type: integer, description: "activity_log row id" }
+ *                       po_id:             { type: integer }
+ *                       order_no:          { type: string, nullable: true }
+ *                       vendor_name:       { type: string, nullable: true }
+ *                       project_id:        { type: integer, nullable: true }
+ *                       performed_by:      { type: string, nullable: true }
+ *                       performed_by_name: { type: string, nullable: true }
+ *                       created_at:        { type: string, format: date-time }
+ *                       meta:
+ *                         type: object
+ *                         properties:
+ *                           comparison_id: { type: integer }
+ *                           vendor_id:     { type: integer, nullable: true }
+ *                           order_no:      { type: string, nullable: true }
+ *                           changes:
+ *                             type: array
+ *                             items:
+ *                               type: object
+ *                               properties:
+ *                                 item_no:      { type: string, nullable: true }
+ *                                 description:  { type: string, nullable: true }
+ *                                 vendor_name:  { type: string, nullable: true }
+ *                                 vendor_rate:  { type: number, description: "Rate quoted by the selected vendor in the comparison" }
+ *                                 po_rate:      { type: number, description: "Rate actually used on the PO" }
+ *                                 difference:   { type: number, description: "po_rate - vendor_rate" }
+ *       500:
+ *         description: Server error
+ */
+router.get("/price-change-logs", async (req, res) => {
+  try {
+    const limit  = Math.min(parseInt(req.query.limit)  || 50, 200);
+    const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+
+    const conditions = [`al.entity_type = 'po'`, `al.action = 'price_overridden'`];
+    const values = [];
+
+    if (req.query.project_id) {
+      values.push(req.query.project_id);
+      conditions.push(`al.project_id = $${values.length}`);
+    }
+    if (req.query.po_id) {
+      values.push(String(req.query.po_id));
+      conditions.push(`al.entity_id = $${values.length}`);
+    }
+
+    const whereClause = `WHERE ${conditions.join(" AND ")}`;
+
+    const [rows, countResult] = await Promise.all([
+      pool.query(
+        `SELECT al.id, al.entity_id AS po_id, p.order_no, p.vendor_name,
+                al.project_id, al.performed_by, al.performed_by_name,
+                al.created_at, al.meta
+           FROM activity_log al
+           LEFT JOIN pos p ON p.po_id::text = al.entity_id::text
+           ${whereClause}
+          ORDER BY al.created_at DESC
+          LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+        [...values, limit, offset]
+      ),
+      pool.query(
+        `SELECT COUNT(*) FROM activity_log al ${whereClause}`,
+        values
+      ),
+    ]);
+
+    res.json({
+      total: parseInt(countResult.rows[0].count),
+      limit,
+      offset,
+      logs: rows.rows,
+    });
+  } catch (error) {
+    console.error("Error fetching PO price-change logs:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -715,6 +929,8 @@ router.put("/:id", async (req, res) => {
       project_id: result.rows[0].project_id,
       meta: { updates: req.body }
     });
+
+    logPriceOverridesIfAny(result.rows[0], req.body.user_id, req.body.user_name);
   } catch (error) {
     console.error("Error updating PO:", error);
     res.status(500).json({ error: error.message });
