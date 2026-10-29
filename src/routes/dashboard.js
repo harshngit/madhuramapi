@@ -60,6 +60,7 @@ function buildNotificationMessage(action, entity_type, entity_name) {
     itr:     "ITR",
     project: "Project",
     user:    "User",
+    ra_bill: "RA Bill",
   }[entity_type] || entity_type;
 
   const name = entity_name ? ` "${entity_name}"` : "";

@@ -40,6 +40,7 @@ const vendorComparisonRoutes = require("./routes/vendor_comparison");
 const vendorComparisonFinalizeRoutes = require("./routes/vendor_comparison_finalize");
 const lodhaInvoiceRoutes     = require("./routes/lodha_invoice");
 const hiranandaniInvoiceRoutes = require("./routes/hiranandani_invoice");
+const billingRoutes          = require("./routes/billing");
 const signatureRoutes        = require("./routes/signatures");
 const notificationRoutes     = require("./routes/notifications");
 
@@ -137,6 +138,7 @@ app.use("/api/vendor-comparison", vendorComparisonRoutes);
 app.use("/api/vendor-comparison-finalize", vendorComparisonFinalizeRoutes);
 app.use("/api/lodha-invoice",     lodhaInvoiceRoutes);
 app.use("/api/hiranandani-invoice", hiranandaniInvoiceRoutes);
+app.use("/api/billing",           billingRoutes);
 app.use("/api/signatures",        signatureRoutes);
 app.use("/api/notifications",     notificationRoutes);
 
