@@ -202,6 +202,7 @@ async function getPrList(whereClause, values) {
              'item_no',             pri.item_no,
              'boq_remaining_quantity', (COALESCE(b.quantity,0) - COALESCE(b.used_quantity,0))
            )
+           ORDER BY pri.pr_item_id
          ) FILTER (WHERE pri.pr_item_id IS NOT NULL),
          '[]'::json
        ) AS items
@@ -368,6 +369,7 @@ router.post("/", async (req, res) => {
                   'item_no',             pri.item_no,
                   'boq_remaining_quantity', (COALESCE(b.quantity,0) - COALESCE(b.used_quantity,0))
                 )
+                ORDER BY pri.pr_item_id
               ) FILTER (WHERE pri.pr_item_id IS NOT NULL), '[]'::json) AS items
          FROM purchase_requisitions pr
          LEFT JOIN purchase_requisition_items pri ON pri.pr_id = pr.pr_id
