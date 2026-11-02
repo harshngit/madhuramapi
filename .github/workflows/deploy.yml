@@ -20,4 +20,10 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           script: |
+            set -e
             bash /var/www/madhuramapi/deploy.sh
+            # Non-interactive SSH may not have node on PATH when it is installed through nvm.
+            if [ -s "$HOME/.nvm/nvm.sh" ]; then . "$HOME/.nvm/nvm.sh"; fi
+            cd /var/www/madhuramapi
+            # Safe to repeat on every deploy: it only adds what is missing. Fails the deploy if it errors.
+            node src/scripts/apply_billing_schema.js
